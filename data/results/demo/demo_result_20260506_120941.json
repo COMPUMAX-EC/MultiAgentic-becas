@@ -1,0 +1,157 @@
+{
+  "demo_status": "success",
+  "profile_summary": {
+    "nationality": "Colombian",
+    "academic_level": "Bachelor",
+    "field_of_study": "Computer Science",
+    "target_countries": [
+      "Netherlands",
+      "Germany",
+      "Canada"
+    ]
+  },
+  "workflow_steps": [
+    {
+      "step_name": "profile_normalization",
+      "status": "completed",
+      "count": 1,
+      "message": "Demo profile loaded and normalized successfully."
+    },
+    {
+      "step_name": "query_generation",
+      "status": "completed",
+      "count": 4,
+      "message": "Scholarship search queries generated."
+    },
+    {
+      "step_name": "web_search",
+      "status": "completed",
+      "count": 20,
+      "message": "Candidate scholarship sources collected from live search."
+    },
+    {
+      "step_name": "source_validation",
+      "status": "completed",
+      "count": 20,
+      "message": "Candidate sources validated."
+    },
+    {
+      "step_name": "page_reading",
+      "status": "completed",
+      "count": 20,
+      "message": "Eligible pages read and cleaned."
+    },
+    {
+      "step_name": "scholarship_extraction",
+      "status": "completed",
+      "count": 48,
+      "message": "Structured scholarship records extracted."
+    },
+    {
+      "step_name": "matching",
+      "status": "completed",
+      "count": 48,
+      "message": "Extracted scholarships matched against the demo profile."
+    },
+    {
+      "step_name": "ranking",
+      "status": "completed",
+      "count": 10,
+      "message": "Final scholarship recommendations ranked for demo output."
+    }
+  ],
+  "generated_queries_count": 4,
+  "sources_found_count": 20,
+  "sources_validated_count": 20,
+  "pages_read_count": 20,
+  "scholarships_extracted_count": 48,
+  "matches_count": 48,
+  "ranked_results_count": 10,
+  "top_recommendations": [
+    {
+      "rank": 1,
+      "scholarship_name": "DAAD Scholarship Programs",
+      "final_score": 52,
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because scholarship academic level is not clearly specified.",
+      "source_url": "https://www.studying-in-germany.org/scholarships/"
+    },
+    {
+      "rank": 2,
+      "scholarship_name": "SME Education Foundation Scholarships",
+      "final_score": 49,
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because eligible nationalities are not clearly specified.",
+      "source_url": "https://www.grantme.ca/blog/8-stem-scholarships-for-students-in-canada"
+    },
+    {
+      "rank": 3,
+      "scholarship_name": "Society of Women Engineers Scholarship",
+      "final_score": 49,
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because eligible nationalities are not clearly specified.",
+      "source_url": "https://www.grantme.ca/blog/8-stem-scholarships-for-students-in-canada"
+    },
+    {
+      "rank": 4,
+      "scholarship_name": "Heinrich Böll Foundation Scholarships",
+      "final_score": 49,
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because scholarship academic level is not clearly specified.",
+      "source_url": "https://www.studying-in-germany.org/scholarships/"
+    },
+    {
+      "rank": 5,
+      "scholarship_name": "Konrad-Adenauer-Stiftung Scholarship",
+      "final_score": 37,
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because required language may be missing: b2-level german language skills.",
+      "source_url": "https://www.studying-in-germany.org/scholarships/"
+    },
+    {
+      "rank": 6,
+      "scholarship_name": "Bi-Annual Environmental Awareness Scholarship Essay",
+      "final_score": 32,
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because field of study does not clearly match the scholarship focus.",
+      "source_url": "https://www.grantme.ca/blog/8-stem-scholarships-for-students-in-canada"
+    },
+    {
+      "rank": 7,
+      "scholarship_name": "Generation Google Scholarship",
+      "final_score": 11,
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because eligible nationalities are not clearly specified.",
+      "source_url": "https://www.grantme.ca/blog/8-stem-scholarships-for-students-in-canada"
+    },
+    {
+      "rank": 8,
+      "scholarship_name": "Charles Labtiuk Scholarship",
+      "final_score": 4,
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because field of study does not clearly match the scholarship focus.",
+      "source_url": "https://www.grantme.ca/blog/8-stem-scholarships-for-students-in-canada"
+    },
+    {
+      "rank": 9,
+      "scholarship_name": "CIBC Future Heroes Bursary Fund",
+      "final_score": 4,
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because field of study does not clearly match the scholarship focus.",
+      "source_url": "https://www.grantme.ca/blog/8-stem-scholarships-for-students-in-canada"
+    },
+    {
+      "rank": 10,
+      "scholarship_name": "DAAD EPOS Scholarship",
+      "final_score": 3,
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because academic level does not match the scholarship target level.",
+      "source_url": "https://fullyfundedscholarship.org/fully-funded-scholarships-computer-science/"
+    }
+  ],
+  "errors": [],
+  "output_files": {
+    "json": "C:\\Users\\jhona\\Documents\\New project\\Nueva carpeta\\MultiAgentic-becas\\data\\results\\demo\\demo_result_20260506_120941.json",
+    "markdown": "C:\\Users\\jhona\\Documents\\New project\\Nueva carpeta\\MultiAgentic-becas\\data\\results\\demo\\demo_report_20260506_120941.md"
+  }
+}

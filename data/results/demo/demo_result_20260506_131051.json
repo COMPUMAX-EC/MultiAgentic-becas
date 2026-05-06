@@ -1,0 +1,32 @@
+{
+  "demo_status": "failed",
+  "profile_summary": {
+    "nationality": null,
+    "academic_level": null,
+    "field_of_study": null,
+    "target_countries": []
+  },
+  "workflow_steps": [
+    {
+      "step_name": "profile_normalization",
+      "status": "failed",
+      "count": 0,
+      "message": "Demo profile could not be prepared: Field 'languages' must contain at least one non-empty text value."
+    }
+  ],
+  "generated_queries_count": 0,
+  "sources_found_count": 0,
+  "sources_validated_count": 0,
+  "pages_read_count": 0,
+  "scholarships_extracted_count": 0,
+  "matches_count": 0,
+  "ranked_results_count": 0,
+  "top_recommendations": [],
+  "errors": [
+    "profile_normalization: Field 'languages' must contain at least one non-empty text value."
+  ],
+  "output_files": {
+    "json": "C:\\Users\\jhona\\Documents\\New project\\Nueva carpeta\\MultiAgentic-becas\\data\\results\\demo\\demo_result_20260506_131051.json",
+    "markdown": "C:\\Users\\jhona\\Documents\\New project\\Nueva carpeta\\MultiAgentic-becas\\data\\results\\demo\\demo_report_20260506_131051.md"
+  }
+}

@@ -1,0 +1,236 @@
+{
+  "demo_status": "partial_failure",
+  "profile_summary": {
+    "nationality": "Colombian",
+    "academic_level": "Bachelor",
+    "field_of_study": "Computer Science",
+    "target_countries": [
+      "Canada",
+      "Germany",
+      "Netherlands"
+    ]
+  },
+  "workflow_steps": [
+    {
+      "step_name": "profile_normalization",
+      "status": "completed",
+      "count": 1,
+      "message": "Demo profile loaded and normalized successfully."
+    },
+    {
+      "step_name": "query_generation",
+      "status": "completed",
+      "count": 5,
+      "message": "Scholarship search queries generated."
+    },
+    {
+      "step_name": "web_search",
+      "status": "completed",
+      "count": 20,
+      "message": "Candidate scholarship sources collected from live search."
+    },
+    {
+      "step_name": "source_validation",
+      "status": "completed",
+      "count": 20,
+      "message": "Candidate sources validated."
+    },
+    {
+      "step_name": "page_reading",
+      "status": "completed",
+      "count": 20,
+      "message": "Eligible pages read and cleaned."
+    },
+    {
+      "step_name": "scholarship_extraction",
+      "status": "completed",
+      "count": 33,
+      "message": "Structured scholarship records extracted."
+    },
+    {
+      "step_name": "matching",
+      "status": "completed",
+      "count": 33,
+      "message": "Extracted scholarships matched against the demo profile."
+    },
+    {
+      "step_name": "ranking",
+      "status": "completed",
+      "count": 10,
+      "message": "Final scholarship recommendations ranked for demo output."
+    }
+  ],
+  "generated_queries_count": 5,
+  "sources_found_count": 20,
+  "sources_validated_count": 20,
+  "pages_read_count": 20,
+  "scholarships_extracted_count": 33,
+  "matches_count": 33,
+  "ranked_results_count": 10,
+  "top_recommendations": [
+    {
+      "rank": 1,
+      "scholarship_name": "DAAD Scholarship Programs",
+      "final_score": 55,
+      "compatibility_score": 67,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because scholarship academic level is not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 67.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 12 points."
+      ],
+      "source_url": "https://www.studying-in-germany.org/scholarships/"
+    },
+    {
+      "rank": 2,
+      "scholarship_name": "Friedrich Ebert Foundation Scholarships",
+      "final_score": 52,
+      "compatibility_score": 67,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because scholarship academic level is not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 67.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://www.studying-in-germany.org/scholarships/"
+    },
+    {
+      "rank": 3,
+      "scholarship_name": "Heinrich Böll Foundation Scholarships",
+      "final_score": 49,
+      "compatibility_score": 64,
+      "eligibility_decision": "possible_match",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because scholarship academic level is not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 64.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://www.studying-in-germany.org/scholarships/"
+    },
+    {
+      "rank": 4,
+      "scholarship_name": "Konrad-Adenauer-Stiftung Scholarship",
+      "final_score": 37,
+      "compatibility_score": 57,
+      "eligibility_decision": "possible_match",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because required language may be missing: b2-level german language skills.",
+      "ranking_reasons": [
+        "Base compatibility score is 57.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points.",
+        "Missing requirements reduce the score by 5 points."
+      ],
+      "source_url": "https://www.studying-in-germany.org/scholarships/"
+    },
+    {
+      "rank": 5,
+      "scholarship_name": "DAAD Scholarships",
+      "final_score": 0,
+      "compatibility_score": 57,
+      "eligibility_decision": "not_eligible",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because academic level does not match the scholarship target level.",
+      "ranking_reasons": [
+        "Base compatibility score is 57.",
+        "not_eligible reduces the score by 50 points.",
+        "Risk factors reduce the score by 12 points.",
+        "Missing requirements reduce the score by 10 points."
+      ],
+      "source_url": "https://searchlabz.com/computer-science-scholarships-in-germany-for-international-students-guide/"
+    },
+    {
+      "rank": 6,
+      "scholarship_name": "Technical University of Munich Scholarships",
+      "final_score": 0,
+      "compatibility_score": 57,
+      "eligibility_decision": "not_eligible",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because academic level does not match the scholarship target level.",
+      "ranking_reasons": [
+        "Base compatibility score is 57.",
+        "not_eligible reduces the score by 50 points.",
+        "Risk factors reduce the score by 12 points.",
+        "Missing requirements reduce the score by 10 points."
+      ],
+      "source_url": "https://searchlabz.com/computer-science-scholarships-in-germany-for-international-students-guide/"
+    },
+    {
+      "rank": 7,
+      "scholarship_name": "RWTH Aachen University Scholarships",
+      "final_score": 0,
+      "compatibility_score": 57,
+      "eligibility_decision": "not_eligible",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because academic level does not match the scholarship target level.",
+      "ranking_reasons": [
+        "Base compatibility score is 57.",
+        "not_eligible reduces the score by 50 points.",
+        "Risk factors reduce the score by 12 points.",
+        "Missing requirements reduce the score by 10 points."
+      ],
+      "source_url": "https://searchlabz.com/computer-science-scholarships-in-germany-for-international-students-guide/"
+    },
+    {
+      "rank": 8,
+      "scholarship_name": "KfW Bank Scholarships",
+      "final_score": 0,
+      "compatibility_score": 57,
+      "eligibility_decision": "not_eligible",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because academic level does not match the scholarship target level.",
+      "ranking_reasons": [
+        "Base compatibility score is 57.",
+        "not_eligible reduces the score by 50 points.",
+        "Risk factors reduce the score by 12 points.",
+        "Missing requirements reduce the score by 10 points."
+      ],
+      "source_url": "https://searchlabz.com/computer-science-scholarships-in-germany-for-international-students-guide/"
+    },
+    {
+      "rank": 9,
+      "scholarship_name": "Friedrich Ebert Stiftung Scholarships",
+      "final_score": 0,
+      "compatibility_score": 57,
+      "eligibility_decision": "not_eligible",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because academic level does not match the scholarship target level.",
+      "ranking_reasons": [
+        "Base compatibility score is 57.",
+        "not_eligible reduces the score by 50 points.",
+        "Risk factors reduce the score by 12 points.",
+        "Missing requirements reduce the score by 10 points."
+      ],
+      "source_url": "https://searchlabz.com/computer-science-scholarships-in-germany-for-international-students-guide/"
+    },
+    {
+      "rank": 10,
+      "scholarship_name": "Emerging Leaders in the Americas Program (ELAP)",
+      "final_score": 0,
+      "compatibility_score": 54,
+      "eligibility_decision": "not_eligible",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because academic level does not match the scholarship target level.",
+      "ranking_reasons": [
+        "Base compatibility score is 54.",
+        "not_eligible reduces the score by 50 points.",
+        "Risk factors reduce the score by 15 points.",
+        "Missing requirements reduce the score by 5 points."
+      ],
+      "source_url": "https://www.educanada.ca/colombia-colombie/scholarships-bourses/index.aspx?lang=eng"
+    }
+  ],
+  "errors": [
+    "extraction: No valid scholarships were extracted."
+  ],
+  "output_files": {
+    "json": "C:\\Users\\jhona\\Documents\\New project\\Nueva carpeta\\MultiAgentic-becas\\data\\results\\demo\\demo_result_20260506_131526.json",
+    "markdown": "C:\\Users\\jhona\\Documents\\New project\\Nueva carpeta\\MultiAgentic-becas\\data\\results\\demo\\demo_report_20260506_131526.md"
+  }
+}

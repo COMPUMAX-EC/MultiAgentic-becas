@@ -1,0 +1,233 @@
+{
+  "demo_status": "partial_failure",
+  "profile_summary": {
+    "nationality": "Colombian",
+    "academic_level": "Bachelor",
+    "field_of_study": "Computer Science",
+    "target_countries": [
+      "Canada",
+      "Germany",
+      "Netherlands"
+    ]
+  },
+  "workflow_steps": [
+    {
+      "step_name": "profile_normalization",
+      "status": "completed",
+      "count": 1,
+      "message": "Demo profile loaded and normalized successfully."
+    },
+    {
+      "step_name": "query_generation",
+      "status": "completed",
+      "count": 5,
+      "message": "Scholarship search queries generated."
+    },
+    {
+      "step_name": "web_search",
+      "status": "completed",
+      "count": 25,
+      "message": "Candidate scholarship sources collected from live search."
+    },
+    {
+      "step_name": "source_validation",
+      "status": "completed",
+      "count": 25,
+      "message": "Candidate sources validated."
+    },
+    {
+      "step_name": "page_reading",
+      "status": "completed",
+      "count": 25,
+      "message": "Eligible pages read and cleaned."
+    },
+    {
+      "step_name": "scholarship_extraction",
+      "status": "completed",
+      "count": 20,
+      "message": "Structured scholarship records extracted."
+    },
+    {
+      "step_name": "matching",
+      "status": "completed",
+      "count": 20,
+      "message": "Extracted scholarships matched against the demo profile."
+    },
+    {
+      "step_name": "ranking",
+      "status": "completed",
+      "count": 10,
+      "message": "Final scholarship recommendations ranked for demo output."
+    }
+  ],
+  "generated_queries_count": 5,
+  "sources_found_count": 25,
+  "sources_validated_count": 25,
+  "pages_read_count": 25,
+  "scholarships_extracted_count": 20,
+  "matches_count": 20,
+  "ranked_results_count": 10,
+  "top_recommendations": [
+    {
+      "rank": 1,
+      "scholarship_name": "U of T Engineering International Scholarships",
+      "final_score": 62,
+      "compatibility_score": 74,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 74.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 12 points."
+      ],
+      "source_url": "https://future.utoronto.ca/scholarships-international-students"
+    },
+    {
+      "rank": 2,
+      "scholarship_name": "Arts & Science Global Scholarship",
+      "final_score": 59,
+      "compatibility_score": 74,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 74.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://future.utoronto.ca/scholarships-international-students"
+    },
+    {
+      "rank": 3,
+      "scholarship_name": "Arts & Science International Undergraduate Entrance Award",
+      "final_score": 59,
+      "compatibility_score": 74,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 74.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://future.utoronto.ca/scholarships-international-students"
+    },
+    {
+      "rank": 4,
+      "scholarship_name": "President's Scholars of Excellence Program",
+      "final_score": 49,
+      "compatibility_score": 64,
+      "eligibility_decision": "possible_match",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 64.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://future.utoronto.ca/scholarships-international-students"
+    },
+    {
+      "rank": 5,
+      "scholarship_name": "U of T Scholars Program",
+      "final_score": 49,
+      "compatibility_score": 64,
+      "eligibility_decision": "possible_match",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 64.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://future.utoronto.ca/scholarships-international-students"
+    },
+    {
+      "rank": 6,
+      "scholarship_name": "University of Toronto International Scholar Award - UTM",
+      "final_score": 49,
+      "compatibility_score": 64,
+      "eligibility_decision": "possible_match",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 64.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://future.utoronto.ca/scholarships-international-students"
+    },
+    {
+      "rank": 7,
+      "scholarship_name": "International Scholar Award - U of T Scarborough",
+      "final_score": 49,
+      "compatibility_score": 64,
+      "eligibility_decision": "possible_match",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 64.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://future.utoronto.ca/scholarships-international-students"
+    },
+    {
+      "rank": 8,
+      "scholarship_name": "Schulich Leader Scholarships",
+      "final_score": 0,
+      "compatibility_score": 64,
+      "eligibility_decision": "not_eligible",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because nationality may not be eligible for colombian applicants.",
+      "ranking_reasons": [
+        "Base compatibility score is 64.",
+        "not_eligible reduces the score by 50 points.",
+        "Risk factors reduce the score by 12 points.",
+        "Missing requirements reduce the score by 5 points."
+      ],
+      "source_url": "https://future.utoronto.ca/scholarships"
+    },
+    {
+      "rank": 9,
+      "scholarship_name": "Beland Honderich Award",
+      "final_score": 0,
+      "compatibility_score": 54,
+      "eligibility_decision": "not_eligible",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because nationality may not be eligible for colombian applicants.",
+      "ranking_reasons": [
+        "Base compatibility score is 54.",
+        "not_eligible reduces the score by 50 points.",
+        "Risk factors reduce the score by 15 points.",
+        "Missing requirements reduce the score by 5 points."
+      ],
+      "source_url": "https://future.utoronto.ca/scholarships"
+    },
+    {
+      "rank": 10,
+      "scholarship_name": "Loran Scholar",
+      "final_score": 0,
+      "compatibility_score": 54,
+      "eligibility_decision": "not_eligible",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because nationality may not be eligible for colombian applicants.",
+      "ranking_reasons": [
+        "Base compatibility score is 54.",
+        "not_eligible reduces the score by 50 points.",
+        "Risk factors reduce the score by 15 points.",
+        "Missing requirements reduce the score by 5 points."
+      ],
+      "source_url": "https://future.utoronto.ca/scholarships"
+    }
+  ],
+  "errors": [
+    "extraction: No valid scholarships were extracted.",
+    "extraction: Ollama request timed out after 60 seconds."
+  ],
+  "output_files": {
+    "json": "C:\\Users\\jhona\\Documents\\New project\\Nueva carpeta\\MultiAgentic-becas\\data\\results\\demo\\demo_result_20260506_134009.json",
+    "markdown": "C:\\Users\\jhona\\Documents\\New project\\Nueva carpeta\\MultiAgentic-becas\\data\\results\\demo\\demo_report_20260506_134009.md"
+  }
+}

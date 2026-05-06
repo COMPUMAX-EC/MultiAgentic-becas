@@ -1,0 +1,233 @@
+{
+  "demo_status": "partial_failure",
+  "profile_summary": {
+    "nationality": "Colombian",
+    "academic_level": "Bachelor",
+    "field_of_study": "Computer Science",
+    "target_countries": [
+      "Netherlands",
+      "Germany",
+      "Canada"
+    ]
+  },
+  "workflow_steps": [
+    {
+      "step_name": "profile_normalization",
+      "status": "completed",
+      "count": 1,
+      "message": "Demo profile loaded and normalized successfully."
+    },
+    {
+      "step_name": "query_generation",
+      "status": "completed",
+      "count": 5,
+      "message": "Scholarship search queries generated."
+    },
+    {
+      "step_name": "web_search",
+      "status": "completed",
+      "count": 25,
+      "message": "Candidate scholarship sources collected from live search."
+    },
+    {
+      "step_name": "source_validation",
+      "status": "completed",
+      "count": 25,
+      "message": "Candidate sources validated."
+    },
+    {
+      "step_name": "page_reading",
+      "status": "completed",
+      "count": 25,
+      "message": "Eligible pages read and cleaned."
+    },
+    {
+      "step_name": "scholarship_extraction",
+      "status": "completed",
+      "count": 29,
+      "message": "Structured scholarship records extracted."
+    },
+    {
+      "step_name": "matching",
+      "status": "completed",
+      "count": 29,
+      "message": "Extracted scholarships matched against the demo profile."
+    },
+    {
+      "step_name": "ranking",
+      "status": "completed",
+      "count": 10,
+      "message": "Final scholarship recommendations ranked for demo output."
+    }
+  ],
+  "generated_queries_count": 5,
+  "sources_found_count": 25,
+  "sources_validated_count": 25,
+  "pages_read_count": 25,
+  "scholarships_extracted_count": 29,
+  "matches_count": 29,
+  "ranked_results_count": 10,
+  "top_recommendations": [
+    {
+      "rank": 1,
+      "scholarship_name": "Accenture Leadership Award",
+      "final_score": 59,
+      "compatibility_score": 74,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 74.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://www.cs.ubc.ca/students/undergrad/advising-resources/awards-scholarships"
+    },
+    {
+      "rank": 2,
+      "scholarship_name": "Bill Aiello Memorial Award in Computer Science",
+      "final_score": 59,
+      "compatibility_score": 74,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 74.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://www.cs.ubc.ca/students/undergrad/advising-resources/awards-scholarships"
+    },
+    {
+      "rank": 3,
+      "scholarship_name": "Bit Quill Technologies Award for Women in Computer Science",
+      "final_score": 59,
+      "compatibility_score": 74,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 74.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://www.cs.ubc.ca/students/undergrad/advising-resources/awards-scholarships"
+    },
+    {
+      "rank": 4,
+      "scholarship_name": "Broadridge Financial Solutions Award for Women in Computer Science",
+      "final_score": 59,
+      "compatibility_score": 74,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 74.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://www.cs.ubc.ca/students/undergrad/advising-resources/awards-scholarships"
+    },
+    {
+      "rank": 5,
+      "scholarship_name": "Computer Science Scholarship",
+      "final_score": 59,
+      "compatibility_score": 74,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 74.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://www.cs.ubc.ca/students/undergrad/advising-resources/awards-scholarships"
+    },
+    {
+      "rank": 6,
+      "scholarship_name": "David Shum Memorial Prize in Computer Science",
+      "final_score": 59,
+      "compatibility_score": 74,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 74.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://www.cs.ubc.ca/students/undergrad/advising-resources/awards-scholarships"
+    },
+    {
+      "rank": 7,
+      "scholarship_name": "Gary Kusin Award for Women in Video Gaming",
+      "final_score": 59,
+      "compatibility_score": 74,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 74.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://www.cs.ubc.ca/students/undergrad/advising-resources/awards-scholarships"
+    },
+    {
+      "rank": 8,
+      "scholarship_name": "Greer Family Scholarship",
+      "final_score": 59,
+      "compatibility_score": 74,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 74.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://www.cs.ubc.ca/students/undergrad/advising-resources/awards-scholarships"
+    },
+    {
+      "rank": 9,
+      "scholarship_name": "Improving Award in Computer Science",
+      "final_score": 59,
+      "compatibility_score": 74,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 74.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://www.cs.ubc.ca/students/undergrad/advising-resources/awards-scholarships"
+    },
+    {
+      "rank": 10,
+      "scholarship_name": "Inquiring Minds in Computer Science",
+      "final_score": 59,
+      "compatibility_score": 74,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 74.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://www.cs.ubc.ca/students/undergrad/advising-resources/awards-scholarships"
+    }
+  ],
+  "errors": [
+    "extraction: Ollama request timed out after 60 seconds.",
+    "extraction: No valid scholarships were extracted.",
+    "extraction: Ollama request timed out after 60 seconds.",
+    "extraction: No valid scholarships were extracted.",
+    "extraction: Ollama request timed out after 60 seconds."
+  ],
+  "output_files": {
+    "json": "C:\\Users\\jhona\\Documents\\New project\\Nueva carpeta\\MultiAgentic-becas\\data\\results\\demo\\demo_result_20260506_122246.json",
+    "markdown": "C:\\Users\\jhona\\Documents\\New project\\Nueva carpeta\\MultiAgentic-becas\\data\\results\\demo\\demo_report_20260506_122246.md"
+  }
+}

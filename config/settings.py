@@ -17,6 +17,11 @@ class Settings:
     OLLAMA_MODEL: str
     OLLAMA_HOST: str
     LLM_TIMEOUT_SECONDS: int
+    REMOTE_LLM_BASE_URL: str
+    REMOTE_LLM_API_KEY: str
+    REMOTE_LLM_MODEL: str
+    REMOTE_LLM_TIMEOUT_SECONDS: int
+    REMOTE_LLM_ENDPOINT_TYPE: str
     SEARCH_PROVIDER: str
     SEARCH_MAX_RESULTS_PER_QUERY: int
     SEARCH_TIMEOUT_SECONDS: int
@@ -47,6 +52,10 @@ class Settings:
     REFRESH_STALE_DAYS: int
     REFRESH_CHECK_PAGES: bool
     REFRESH_SKIP_CLOSED: bool
+    DEMO_OUTPUT_DIR: Path
+    DEMO_PROFILE_PATH: Path
+    DEMO_USE_LIVE_SEARCH: bool
+    DEMO_MAX_RESULTS: int
     RANKING_MIN_FINAL_SCORE: int
     RANKING_MAX_RESULTS: int
     RANKING_SCORE_VERSION: str
@@ -67,6 +76,13 @@ settings = Settings(
     OLLAMA_MODEL=os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct"),
     OLLAMA_HOST=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
     LLM_TIMEOUT_SECONDS=int(os.getenv("LLM_TIMEOUT_SECONDS", "60")),
+    REMOTE_LLM_BASE_URL=os.getenv("REMOTE_LLM_BASE_URL", "").strip(),
+    REMOTE_LLM_API_KEY=os.getenv("REMOTE_LLM_API_KEY", "").strip(),
+    REMOTE_LLM_MODEL=os.getenv("REMOTE_LLM_MODEL", "qwen2.5:7b-instruct").strip(),
+    REMOTE_LLM_TIMEOUT_SECONDS=int(os.getenv("REMOTE_LLM_TIMEOUT_SECONDS", "60")),
+    REMOTE_LLM_ENDPOINT_TYPE=os.getenv(
+        "REMOTE_LLM_ENDPOINT_TYPE", "openai_compatible"
+    ).strip().lower(),
     SEARCH_PROVIDER=os.getenv("SEARCH_PROVIDER", "duckduckgo"),
     SEARCH_MAX_RESULTS_PER_QUERY=int(os.getenv("SEARCH_MAX_RESULTS_PER_QUERY", "5")),
     SEARCH_TIMEOUT_SECONDS=int(os.getenv("SEARCH_TIMEOUT_SECONDS", "20")),
@@ -121,6 +137,15 @@ settings = Settings(
     == "true",
     REFRESH_SKIP_CLOSED=os.getenv("REFRESH_SKIP_CLOSED", "true").strip().lower()
     == "true",
+    DEMO_OUTPUT_DIR=Path(
+        os.getenv("DEMO_OUTPUT_DIR", str(DATA_DIR / "results" / "demo"))
+    ),
+    DEMO_PROFILE_PATH=Path(
+        os.getenv("DEMO_PROFILE_PATH", str(DATA_DIR / "profiles" / "demo_profile.json"))
+    ),
+    DEMO_USE_LIVE_SEARCH=os.getenv("DEMO_USE_LIVE_SEARCH", "true").strip().lower()
+    == "true",
+    DEMO_MAX_RESULTS=int(os.getenv("DEMO_MAX_RESULTS", "10")),
     RANKING_MIN_FINAL_SCORE=int(os.getenv("RANKING_MIN_FINAL_SCORE", "50")),
     RANKING_MAX_RESULTS=int(os.getenv("RANKING_MAX_RESULTS", "10")),
     RANKING_SCORE_VERSION=os.getenv("RANKING_SCORE_VERSION", "v1").strip(),

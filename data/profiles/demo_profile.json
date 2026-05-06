@@ -1,0 +1,32 @@
+{
+  "nationality": "colombian",
+  "country_of_residence": "colombia",
+  "languages": [
+    {
+      "language": "Spanish",
+      "level": "Native"
+    },
+    {
+      "language": "English",
+      "level": "B2"
+    }
+  ],
+  "academic_level": "bachelors",
+  "field_of_study": "Computer Science",
+  "interests": [
+    "Artificial Intelligence",
+    "Cybersecurity",
+    "Data Science"
+  ],
+  "target_countries": [
+    "canada",
+    "germany",
+    "netherlands"
+  ],
+  "scholarship_type": "Partial funding",
+  "budget": {
+    "currency": "usd",
+    "max_personal_contribution": 8000
+  },
+  "preferred_modality": "On-campus"
+}

@@ -4,7 +4,7 @@ from schemas.profile_schema import validate_profile
 from utils.normalizer import (
     normalize_academic_level,
     normalize_country,
-    normalize_language_entries,
+    normalize_language_profiles,
     normalize_list,
     normalize_text,
 )
@@ -19,7 +19,7 @@ class ProfileAgent:
             "country_of_residence": normalize_country(
                 validated_profile["country_of_residence"]
             ),
-            "languages": normalize_language_entries(validated_profile["languages"]),
+            "languages": normalize_language_profiles(validated_profile["languages"]),
             "academic_level": normalize_academic_level(
                 validated_profile["academic_level"]
             ),

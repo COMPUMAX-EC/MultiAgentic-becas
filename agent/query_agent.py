@@ -22,6 +22,9 @@ class QueryGenerationError(RuntimeError):
 class QueryAgent:
     def __init__(self, prompt_template_path: Path = PROMPT_TEMPLATE_PATH) -> None:
         self.prompt_template_path = prompt_template_path
+        self.prompt_template = self.prompt_template_path.read_text(
+            encoding="utf-8"
+        ).strip()
 
     def generate_queries(self, normalized_profile: dict) -> list[dict]:
         prompt = self.build_prompt(normalized_profile)
@@ -37,6 +40,5 @@ class QueryAgent:
             raise QueryGenerationError(f"Could not generate valid queries: {exc}") from exc
 
     def build_prompt(self, normalized_profile: dict) -> str:
-        template = self.prompt_template_path.read_text(encoding="utf-8").strip()
         profile_json = json.dumps(normalized_profile, indent=2, ensure_ascii=False)
-        return f"{template}\n\nNormalized profile:\n{profile_json}"
+        return f"{self.prompt_template}\n\nNormalized profile:\n{profile_json}"

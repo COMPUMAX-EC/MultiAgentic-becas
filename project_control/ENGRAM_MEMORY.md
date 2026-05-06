@@ -133,24 +133,23 @@ Important lesson, constraint, or decision that future phases must respect.
 
 ## Phase
 
-Phase 13 - Refresh and Global Scalability Layer
+Phase 15 - Hackathon Technical Demo
 
 ## What
 
-RefreshService updates known scholarship records locally.
+DemoService runs the end-to-end console workflow.
 
 ## Why
 
-The project needs an incremental local refresh step so known scholarships can age gracefully before any future scheduled global refresh exists.
+The project needs a clean console demo path for hackathon review that showcases the workflow without adding UI, slides, or documentation artifacts.
 
 ## Where
 
-- services/refresh_service.py
-- schemas/refresh_schema.py
-- database/repository.py
-- tools/date_validator.py
+- services/demo_service.py
+- schemas/demo_schema.py
+- data/profiles/demo_profile.json
 - main.py
 
 ## Learn
 
-Refresh is incremental and deterministic. No full global search, Qwen, cloud, matching, ranking, or RAG changes are used in this phase.
+Demo output is saved under data/results/demo/. Generated Markdown is output-only and not project documentation. No UI, frontend, slides, README, or documentation files are created.

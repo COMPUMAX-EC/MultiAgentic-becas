@@ -40,13 +40,13 @@ def validate_profile(profile_data: dict) -> dict:
         value = profile_data[field]
         if field in LIST_FIELDS:
             if not isinstance(value, list):
-                raise ProfileValidationError(
-                    f"Field '{field}' must be a list."
-                )
+                raise ProfileValidationError(f"Field '{field}' must be a list.")
             if not value:
-                raise ProfileValidationError(
-                    f"Field '{field}' must be a non-empty list."
-                )
+                raise ProfileValidationError(f"Field '{field}' must be a non-empty list.")
+            if field == "languages":
+                _validate_languages(value)
+                validated_profile[field] = value
+                continue
             if not any(isinstance(item, str) and item.strip() for item in value):
                 raise ProfileValidationError(
                     f"Field '{field}' must contain at least one non-empty text value."
@@ -73,3 +73,34 @@ def validate_profile(profile_data: dict) -> dict:
         )
 
     return validated_profile
+
+
+def _validate_languages(languages: list[object]) -> None:
+    for entry in languages:
+        if isinstance(entry, str):
+            if not entry.strip():
+                raise ProfileValidationError(
+                    "Field 'languages' cannot contain empty text values."
+                )
+            continue
+
+        if isinstance(entry, dict):
+            language_value = entry.get("language")
+            if not isinstance(language_value, str) or not language_value.strip():
+                raise ProfileValidationError(
+                    "Field 'languages' dictionary entries must include a non-empty 'language' value."
+                )
+            level_value = entry.get("level")
+            if level_value is not None and not isinstance(level_value, str):
+                raise ProfileValidationError(
+                    "Field 'languages' level values must be text when provided."
+                )
+            if isinstance(level_value, str) and not level_value.strip():
+                raise ProfileValidationError(
+                    "Field 'languages' level values cannot be empty text."
+                )
+            continue
+
+        raise ProfileValidationError(
+            "Field 'languages' must contain non-empty strings or objects with a 'language' field."
+        )

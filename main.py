@@ -13,11 +13,13 @@ from agent.search_agent import SearchAgent
 from agent.source_validator_agent import SourceValidatorAgent
 from config.settings import settings
 from llm.provider import LLMProviderError, generate_text
+from schemas.demo_schema import DemoSchemaError
 from schemas.match_schema import MatchValidationError
 from schemas.profile_schema import ProfileValidationError, validate_profile
 from schemas.refresh_schema import RefreshValidationError
 from schemas.ranking_schema import RankingValidationError
 from schemas.retrieval_schema import RetrievalValidationError
+from services.demo_service import DemoService
 from services.refresh_service import RefreshService
 from services.matching_service import run_matching
 from services.ranking_service import run_ranking
@@ -532,6 +534,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Refresh known scholarships from the local SQLite knowledge base.",
     )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Run the end-to-end technical demo workflow and export demo outputs.",
+    )
     return parser.parse_args()
 
 
@@ -567,6 +574,36 @@ def main() -> int:
         return run_llm_test()
 
     try:
+        if args.demo:
+            logger.info("Starting Phase 15 hackathon technical demo")
+            demo_result = DemoService().run(settings.DEMO_PROFILE_PATH)
+            for step in demo_result["workflow_steps"]:
+                print(
+                    f"{step['step_name']}: {step['status']} "
+                    f"({step['count']}) - {step['message']}"
+                )
+            if demo_result["top_recommendations"]:
+                print("Top recommendations:")
+                for recommendation in demo_result["top_recommendations"]:
+                    print(
+                        f"#{recommendation.get('rank')} "
+                        f"{recommendation.get('scholarship_name')} "
+                        f"[score={recommendation.get('final_score')}] "
+                        f"{recommendation.get('priority_label')}"
+                    )
+            else:
+                print("Top recommendations: none")
+            logger.info(
+                "Demo outputs exported to %s and %s",
+                demo_result["output_files"].get("json"),
+                demo_result["output_files"].get("markdown"),
+            )
+            logger.info(
+                "Phase 15 hackathon demo completed with status %s",
+                demo_result["demo_status"],
+            )
+            return 0
+
         if args.refresh_known:
             logger.info("Starting Phase 13 refresh and scalability")
             refresh_payload = RefreshService().refresh()
@@ -977,6 +1014,7 @@ def main() -> int:
         RankingValidationError,
         RetrievalValidationError,
         RefreshValidationError,
+        DemoSchemaError,
     ) as exc:
         logger.error("%s", exc)
     except Exception as exc:  # pragma: no cover

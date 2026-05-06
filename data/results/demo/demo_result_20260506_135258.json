@@ -1,0 +1,234 @@
+{
+  "demo_status": "partial_failure",
+  "profile_summary": {
+    "nationality": "Colombian",
+    "academic_level": "Bachelor",
+    "field_of_study": "Computer Science",
+    "target_countries": [
+      "Canada",
+      "Germany",
+      "Netherlands"
+    ]
+  },
+  "workflow_steps": [
+    {
+      "step_name": "profile_normalization",
+      "status": "completed",
+      "count": 1,
+      "message": "Demo profile loaded and normalized successfully."
+    },
+    {
+      "step_name": "query_generation",
+      "status": "completed",
+      "count": 5,
+      "message": "Scholarship search queries generated."
+    },
+    {
+      "step_name": "web_search",
+      "status": "completed",
+      "count": 24,
+      "message": "Candidate scholarship sources collected from live search."
+    },
+    {
+      "step_name": "source_validation",
+      "status": "completed",
+      "count": 24,
+      "message": "Candidate sources validated."
+    },
+    {
+      "step_name": "page_reading",
+      "status": "completed",
+      "count": 24,
+      "message": "Eligible pages read and cleaned."
+    },
+    {
+      "step_name": "scholarship_extraction",
+      "status": "completed",
+      "count": 29,
+      "message": "Structured scholarship records extracted."
+    },
+    {
+      "step_name": "matching",
+      "status": "completed",
+      "count": 29,
+      "message": "Extracted scholarships matched against the demo profile."
+    },
+    {
+      "step_name": "ranking",
+      "status": "completed",
+      "count": 10,
+      "message": "Final scholarship recommendations ranked for demo output."
+    }
+  ],
+  "generated_queries_count": 5,
+  "sources_found_count": 24,
+  "sources_validated_count": 24,
+  "pages_read_count": 24,
+  "scholarships_extracted_count": 29,
+  "matches_count": 29,
+  "ranked_results_count": 10,
+  "top_recommendations": [
+    {
+      "rank": 1,
+      "scholarship_name": "CRA Outstanding Undergraduate Researcher Award",
+      "final_score": 59,
+      "compatibility_score": 74,
+      "eligibility_decision": "possible_match",
+      "priority_label": "low_priority",
+      "recommendation_summary": "Lower priority because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 74.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://web.cs.toronto.edu/undergraduate/scholarships"
+    },
+    {
+      "rank": 2,
+      "scholarship_name": "International Fulbright Science and Technology Award",
+      "final_score": 49,
+      "compatibility_score": 64,
+      "eligibility_decision": "possible_match",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 64.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "http://cs.mcgill.edu/academic/funding/gradscholarship/"
+    },
+    {
+      "rank": 3,
+      "scholarship_name": "Orange Tulip Scholarship Program",
+      "final_score": 49,
+      "compatibility_score": 64,
+      "eligibility_decision": "possible_match",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 64.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://searchlabz.com/scholarships-to-study-data-science-in-netherlands-guide/"
+    },
+    {
+      "rank": 4,
+      "scholarship_name": "Holland Scholarship",
+      "final_score": 49,
+      "compatibility_score": 64,
+      "eligibility_decision": "possible_match",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 64.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://searchlabz.com/scholarships-to-study-data-science-in-netherlands-guide/"
+    },
+    {
+      "rank": 5,
+      "scholarship_name": "Erasmus University Scholarships",
+      "final_score": 49,
+      "compatibility_score": 64,
+      "eligibility_decision": "possible_match",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 64.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://searchlabz.com/scholarships-to-study-data-science-in-netherlands-guide/"
+    },
+    {
+      "rank": 6,
+      "scholarship_name": "Data Science Study Abroad Scholarships",
+      "final_score": 49,
+      "compatibility_score": 64,
+      "eligibility_decision": "possible_match",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because eligible nationalities are not clearly specified.",
+      "ranking_reasons": [
+        "Base compatibility score is 64.",
+        "possible_match keeps the compatibility score unchanged.",
+        "Risk factors reduce the score by 15 points."
+      ],
+      "source_url": "https://searchlabz.com/scholarships-to-study-data-science-in-netherlands-guide/"
+    },
+    {
+      "rank": 7,
+      "scholarship_name": "Canada Graduate Scholarships M (CGS M)",
+      "final_score": 0,
+      "compatibility_score": 44,
+      "eligibility_decision": "not_eligible",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because nationality may not be eligible for colombian applicants.",
+      "ranking_reasons": [
+        "Base compatibility score is 44.",
+        "not_eligible reduces the score by 50 points.",
+        "Risk factors reduce the score by 12 points.",
+        "Missing requirements reduce the score by 10 points."
+      ],
+      "source_url": "http://cs.mcgill.edu/academic/funding/gradscholarship/"
+    },
+    {
+      "rank": 8,
+      "scholarship_name": "Postgraduate Scholarships M (PGS M)",
+      "final_score": 0,
+      "compatibility_score": 44,
+      "eligibility_decision": "not_eligible",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because nationality may not be eligible for colombian applicants.",
+      "ranking_reasons": [
+        "Base compatibility score is 44.",
+        "not_eligible reduces the score by 50 points.",
+        "Risk factors reduce the score by 12 points.",
+        "Missing requirements reduce the score by 10 points."
+      ],
+      "source_url": "http://cs.mcgill.edu/academic/funding/gradscholarship/"
+    },
+    {
+      "rank": 9,
+      "scholarship_name": "Canada Graduate Scholarships D (CGS D)",
+      "final_score": 0,
+      "compatibility_score": 44,
+      "eligibility_decision": "not_eligible",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because nationality may not be eligible for colombian applicants.",
+      "ranking_reasons": [
+        "Base compatibility score is 44.",
+        "not_eligible reduces the score by 50 points.",
+        "Risk factors reduce the score by 12 points.",
+        "Missing requirements reduce the score by 10 points."
+      ],
+      "source_url": "http://cs.mcgill.edu/academic/funding/gradscholarship/"
+    },
+    {
+      "rank": 10,
+      "scholarship_name": "Postgraduate Scholarships D (PGS D)",
+      "final_score": 0,
+      "compatibility_score": 44,
+      "eligibility_decision": "not_eligible",
+      "priority_label": "not_recommended",
+      "recommendation_summary": "Not recommended because nationality may not be eligible for colombian applicants.",
+      "ranking_reasons": [
+        "Base compatibility score is 44.",
+        "not_eligible reduces the score by 50 points.",
+        "Risk factors reduce the score by 12 points.",
+        "Missing requirements reduce the score by 10 points."
+      ],
+      "source_url": "http://cs.mcgill.edu/academic/funding/gradscholarship/"
+    }
+  ],
+  "errors": [
+    "extraction: No valid scholarships were extracted.",
+    "extraction: Ollama request timed out after 60 seconds."
+  ],
+  "output_files": {
+    "json": "C:\\Users\\jhona\\Documents\\New project\\Nueva carpeta\\MultiAgentic-becas\\data\\results\\demo\\demo_result_20260506_135258.json",
+    "markdown": "C:\\Users\\jhona\\Documents\\New project\\Nueva carpeta\\MultiAgentic-becas\\data\\results\\demo\\demo_report_20260506_135258.md"
+  }
+}
