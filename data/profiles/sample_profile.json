@@ -1,0 +1,15 @@
+{
+  "nationality": "  colombian ",
+  "country_of_residence": " colombia ",
+  "languages": [" spanish ", "English", "english"],
+  "academic_level": " bachelors ",
+  "field_of_study": "  Computer Science ",
+  "interests": [" Artificial Intelligence ", "Data Science", "data science"],
+  "target_countries": [" canada ", "Germany", "netherlands"],
+  "scholarship_type": " Partial funding ",
+  "budget": {
+    "currency": " usd ",
+    "max_personal_contribution": 8000
+  },
+  "preferred_modality": " On-campus "
+}

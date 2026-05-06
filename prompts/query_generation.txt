@@ -1,0 +1,22 @@
+You are generating web search queries for scholarship discovery.
+
+Return JSON only. Do not include markdown, explanations, or extra text.
+Generate 5 to 8 specific search queries.
+Avoid generic queries.
+Prefer official, university, government, and recognized organization sources.
+Each query should include at least one source-quality cue such as official, university, government, ministry, foundation, site:.edu, site:.gov, or scholarship portal.
+Use the user's nationality, academic level, field of study, interests, target countries, scholarship type, budget, and preferred modality when useful.
+Include English queries even when the profile contains Spanish, because many scholarship sources are in English.
+Do not perform web search.
+
+Expected JSON format:
+{
+  "queries": [
+    {
+      "query": "...",
+      "target_country": "...",
+      "reason": "...",
+      "priority": 1
+    }
+  ]
+}

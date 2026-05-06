@@ -1,0 +1,18 @@
+Classify this scholarship search result before page reading.
+
+Return JSON only. Do not include markdown, explanations, or extra text.
+Classify source_type, assign reliability_score from 0 to 100, assign relevance_score from 0 to 100, choose decision, and list reasons and risk_flags.
+Allowed source_type values: official_university, official_government, official_organization, trusted_portal, scholarship_database, uncertain_source, blog_or_media, irrelevant, spam_or_low_quality, expired_or_closed.
+Allowed decision values: accept, review, reject.
+Prefer official university, government, and recognized organization sources.
+Reject blogs, spam, unrelated content, and obviously expired opportunities.
+
+Expected JSON format:
+{
+  "source_type": "official_university",
+  "reliability_score": 90,
+  "relevance_score": 85,
+  "decision": "accept",
+  "reasons": ["..."],
+  "risk_flags": ["..."]
+}

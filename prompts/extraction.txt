@@ -1,0 +1,33 @@
+Extract structured scholarship opportunities from the cleaned page text.
+
+Return JSON only. Do not include markdown, explanations, or extra text.
+Extract only scholarship opportunities.
+Do not invent missing data.
+Preserve unknown fields as null or empty lists.
+Detect deadline if available.
+Detect application status if available.
+Allowed application_status values: open, closed, unknown, upcoming.
+Include evidence snippets copied from the page text.
+Support multiple scholarships from one page.
+Ignore unrelated content.
+
+Expected JSON format:
+{
+  "scholarships": [
+    {
+      "scholarship_name": "...",
+      "institution": "...",
+      "country": "...",
+      "academic_level": "...",
+      "eligible_nationalities": ["..."],
+      "required_languages": ["..."],
+      "fields": ["..."],
+      "benefits": ["..."],
+      "deadline": "...",
+      "requirements": ["..."],
+      "application_status": "open",
+      "extraction_confidence": 85,
+      "evidence_snippets": ["..."]
+    }
+  ]
+}
