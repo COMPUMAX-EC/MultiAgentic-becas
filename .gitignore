@@ -12,3 +12,4 @@ ENV/
 
 data/results/*.json
 data/cache/*.json
+node_modules
