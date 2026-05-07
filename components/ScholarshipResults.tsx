@@ -485,11 +485,18 @@ export function ScholarshipResults({ results }: ScholarshipResultsProps) {
   }
 
   const uniqueResults = dedupeScholarships(results);
+  const hasHighOrMediumRecommendation = uniqueResults.some((result) =>
+    ["high_priority", "medium_priority"].includes(result.priority_label),
+  );
   const recommendedResults = sortResults(
-    uniqueResults.filter((result) => isRecommended(result.priority_label)),
+    uniqueResults.filter((result) =>
+      isRecommended(result, hasHighOrMediumRecommendation),
+    ),
   );
   const lessRecommendedResults = sortResults(
-    uniqueResults.filter((result) => !isRecommended(result.priority_label)),
+    uniqueResults.filter(
+      (result) => !isRecommended(result, hasHighOrMediumRecommendation),
+    ),
   );
   const visibleRecommendedResults = recommendedResults.slice(
     0,
@@ -576,8 +583,19 @@ function ResultGroup({
   );
 }
 
-function isRecommended(priorityLabel: string) {
-  return ["high_priority", "medium_priority"].includes(priorityLabel);
+function isRecommended(
+  result: ScholarshipResult,
+  hasHighOrMediumRecommendation: boolean,
+) {
+  if (["high_priority", "medium_priority"].includes(result.priority_label)) {
+    return true;
+  }
+
+  return (
+    !hasHighOrMediumRecommendation &&
+    result.priority_label === "low_priority" &&
+    result.final_score >= 45
+  );
 }
 
 function dedupeScholarships(results: ScholarshipResult[]) {
@@ -598,7 +616,7 @@ function dedupeScholarships(results: ScholarshipResult[]) {
 }
 
 function getScholarshipKey(result: ScholarshipResult) {
-  const link = result.source_url.trim().toLowerCase();
+  const link = (result.display_link || result.source_url).trim().toLowerCase();
   if (link && link !== "#") {
     return `link:${link}`;
   }

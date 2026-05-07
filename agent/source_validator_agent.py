@@ -21,16 +21,20 @@ SCHOLARSHIP_TERMS = (
     "grant",
     "grants",
     "fellowship",
+    "fellowships",
     "financial aid",
+    "financial support",
     "funding",
     "award",
     "stipend",
     "stipendium",
+    "studentship",
+    "tuition waiver",
+    "tuition waivers",
 )
 
 BLOG_OR_MEDIA_TERMS = (
     "blog",
-    "news",
     "linkedin",
     "medium",
     "substack",
@@ -62,12 +66,49 @@ SCHOLARSHIP_DATABASE_DOMAINS = (
     "scholarshiptab.com",
     "scholarshipca.com",
     "globalscholarships.com",
+    "fullyfundedscholarship.org",
+    "opportunitiesforyouth.org",
+    "scholarshiproar.com",
+    "scholarshipregion.com",
+    "youthopportunitieshub.com",
 )
 
 OFFICIAL_GOVERNMENT_DOMAINS = (
     "canada.ca",
     "gc.ca",
     "europa.eu",
+)
+OFFICIAL_COMPANY_DOMAINS = (
+    "google.",
+    "microsoft.",
+    "amazon.",
+    "ibm.",
+    "nvidia.",
+    "adobe.",
+    "intel.",
+    "meta.",
+    "apple.",
+    "openai.",
+)
+VERIFIED_NEWS_DOMAINS = (
+    "timeshighereducation.com",
+    "universityworldnews.com",
+    "insidehighered.com",
+    "chronicle.com",
+    "bbc.com",
+    "bbc.co.uk",
+    "theguardian.com",
+    "dw.com",
+    "elpais.com",
+    "reuters.com",
+    "apnews.com",
+)
+NEWS_OR_MAGAZINE_DOMAIN_TERMS = (
+    "news",
+    "magazine",
+    "newspaper",
+    "times",
+    "chronicle",
 )
 
 
@@ -142,7 +183,7 @@ class SourceValidatorAgent:
                 ["low_relevance"],
             )
 
-        source_type, reliability_score = self._score_reliability(domain)
+        source_type, reliability_score = self._score_reliability(domain, url)
         reasons.append(f"Domain classified as {source_type}.")
 
         if has_suspicious_domain(url):
@@ -173,17 +214,28 @@ class SourceValidatorAgent:
             risk_flags,
         )
 
-    def _score_reliability(self, domain: str) -> tuple[str, int]:
+    def _score_reliability(self, domain: str, url: str) -> tuple[str, int]:
+        lowered_url = url.casefold()
+        if lowered_url.endswith(".pdf"):
+            return "official_pdf", 78
         if any(domain.endswith(pattern) for pattern in OFFICIAL_GOVERNMENT_DOMAINS):
             return "official_government", 95
         if domain.endswith((".gov", ".gov.uk", ".gov.ca", ".gov.au", ".gouv.fr")):
             return "official_government", 95
-        if domain.endswith((".edu", ".edu.au", ".edu.co", ".ac.uk")):
+        if domain.endswith((".edu", ".edu.au", ".edu.co", ".edu.mx", ".edu.sg", ".ac.uk", ".ac.jp")):
             return "official_university", 90
+        if domain.endswith((".ac.", ".edu.")):
+            return "official_institution", 85
         if any(pattern in domain for pattern in OFFICIAL_ORGANIZATION_DOMAINS):
             return "official_organization", 80
+        if any(pattern in domain for pattern in OFFICIAL_COMPANY_DOMAINS):
+            return "official_company", 78
         if any(domain.endswith(pattern) for pattern in TRUSTED_PORTAL_DOMAINS):
             return "trusted_portal", 70
+        if any(domain.endswith(pattern) for pattern in VERIFIED_NEWS_DOMAINS):
+            return "verified_news", 68
+        if any(term in domain for term in NEWS_OR_MAGAZINE_DOMAIN_TERMS):
+            return "verified_news", 58
         if any(domain.endswith(pattern) for pattern in SCHOLARSHIP_DATABASE_DOMAINS):
             return "scholarship_database", 55
         if domain.endswith(".org"):
@@ -226,6 +278,10 @@ class SourceValidatorAgent:
             return "reject"
         if reliability_score < 30 or relevance_score < 25:
             return "reject"
+        if source_type == "scholarship_database":
+            return "review"
+        if source_type in {"verified_news", "trusted_portal", "official_pdf"}:
+            return "review"
         if risk_flags or reliability_score < settings.SOURCE_VALIDATION_MIN_RELIABILITY:
             return "review"
         if relevance_score < settings.SOURCE_VALIDATION_MIN_RELEVANCE:

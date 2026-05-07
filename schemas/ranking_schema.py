@@ -5,6 +5,7 @@ ALLOWED_PRIORITY_LABELS = {
     "high_priority",
     "medium_priority",
     "low_priority",
+    "insufficient_information",
     "not_recommended",
 }
 

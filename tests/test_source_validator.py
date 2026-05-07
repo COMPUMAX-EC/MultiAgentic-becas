@@ -54,6 +54,21 @@ class SourceValidatorAgentTests(unittest.TestCase):
         self.assertEqual(result["source_type"], "blog_or_media")
         self.assertIn(result["decision"], {"review", "reject"})
 
+    def test_low_authority_aggregator_rejected_by_policy_type(self) -> None:
+        result = self.agent.validate_source(
+            {
+                "title": "Fully Funded Scholarships for Computer Science",
+                "url": "https://fullyfundedscholarship.org/fully-funded-scholarships-computer-science/",
+                "snippet": "A copied scholarship listing for international students.",
+                "query": "computer science scholarships",
+                "target_country": "Germany",
+                "priority": 1,
+            }
+        )
+
+        self.assertEqual(result["source_type"], "scholarship_database")
+        self.assertIn(result["decision"], {"review", "reject"})
+
     def test_expired_or_closed_source_rejected(self) -> None:
         result = self.agent.validate_source(
             {

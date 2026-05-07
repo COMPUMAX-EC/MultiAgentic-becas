@@ -55,8 +55,12 @@ class QueryAgentTests(unittest.TestCase):
 
         queries = QueryAgent().generate_queries(self.normalized_profile)
 
-        self.assertEqual(len(queries), 1)
+        self.assertGreaterEqual(len(queries), 1)
         self.assertEqual(queries[0]["priority"], 1)
+        self.assertTrue(
+            any("site:.edu" in query["query"] for query in queries),
+            "Deterministic official-source query families should be appended.",
+        )
 
     def test_validate_generated_queries_deduplicates_repeated_queries(self) -> None:
         queries = validate_generated_queries(

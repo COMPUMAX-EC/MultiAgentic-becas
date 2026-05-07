@@ -7,9 +7,9 @@ from schemas.ranking_schema import RankingValidationError, build_ranking_result
 DECISION_ADJUSTMENTS = {
     "strong_match": 10,
     "possible_match": 0,
-    "weak_match": -15,
-    "not_eligible": -50,
-    "insufficient_information": -20,
+    "weak_match": -5,
+    "not_eligible": -35,
+    "insufficient_information": -8,
 }
 
 EXPIRED_OR_CLOSED_TERMS = (
@@ -59,22 +59,30 @@ class RankingAgent:
         limited_results = scored_results[: settings.RANKING_MAX_RESULTS]
         ranked_results: list[dict] = []
         for index, scored_result in enumerate(limited_results, start=1):
-            ranked_results.append(
-                build_ranking_result(
-                    rank=index,
-                    scholarship_name=scored_result["scholarship_name"],
-                    source_url=scored_result["source_url"],
-                    final_score=scored_result["final_score"],
-                    compatibility_score=scored_result["compatibility_score"],
-                    eligibility_decision=scored_result["eligibility_decision"],
-                    priority_label=scored_result["priority_label"],
-                    ranking_reasons=scored_result["ranking_reasons"],
-                    risk_factors=scored_result["risk_factors"],
-                    missing_requirements=scored_result["missing_requirements"],
-                    recommendation_summary=scored_result["recommendation_summary"],
-                    score_breakdown=scored_result["score_breakdown"],
-                )
+            ranking_result = build_ranking_result(
+                rank=index,
+                scholarship_name=scored_result["scholarship_name"],
+                source_url=scored_result["source_url"],
+                final_score=scored_result["final_score"],
+                compatibility_score=scored_result["compatibility_score"],
+                eligibility_decision=scored_result["eligibility_decision"],
+                priority_label=scored_result["priority_label"],
+                ranking_reasons=scored_result["ranking_reasons"],
+                risk_factors=scored_result["risk_factors"],
+                missing_requirements=scored_result["missing_requirements"],
+                recommendation_summary=scored_result["recommendation_summary"],
+                score_breakdown=scored_result["score_breakdown"],
             )
+            ranking_result.update(
+                {
+                    "display_link": scored_result.get("display_link"),
+                    "official_link": scored_result.get("official_link"),
+                    "application_url": scored_result.get("application_url"),
+                    "pdf_url": scored_result.get("pdf_url"),
+                    "source_type": scored_result.get("source_type"),
+                }
+            )
+            ranked_results.append(ranking_result)
 
         return ranked_results
 
@@ -111,14 +119,14 @@ class RankingAgent:
         if source_adjustment > 0:
             ranking_reasons.append("Source reliability improves ranking confidence.")
 
-        risk_penalty = min(15, len(risk_factors) * 3)
+        risk_penalty = min(8, len(risk_factors))
         if risk_penalty:
             final_score -= risk_penalty
             ranking_reasons.append(
                 f"Risk factors reduce the score by {risk_penalty} points."
             )
 
-        missing_penalty = min(20, len(missing_requirements) * 5)
+        missing_penalty = min(10, len(missing_requirements) * 2)
         if missing_penalty:
             final_score -= missing_penalty
             ranking_reasons.append(
@@ -132,7 +140,7 @@ class RankingAgent:
             )
 
         if eligibility_decision == "not_eligible":
-            final_score = min(final_score, settings.RANKING_MIN_FINAL_SCORE - 1)
+            final_score = min(final_score, 44)
 
         final_score = self._clamp_score(final_score)
         priority_label = self._priority_label(final_score, eligibility_decision)
@@ -140,6 +148,11 @@ class RankingAgent:
         return {
             "scholarship_name": matching_result.get("scholarship_name"),
             "source_url": matching_result.get("source_url"),
+            "display_link": matching_result.get("display_link"),
+            "official_link": matching_result.get("official_link"),
+            "application_url": matching_result.get("application_url"),
+            "pdf_url": matching_result.get("pdf_url"),
+            "source_type": matching_result.get("source_type"),
             "final_score": final_score,
             "compatibility_score": compatibility_score,
             "eligibility_decision": eligibility_decision,
@@ -171,19 +184,21 @@ class RankingAgent:
             score_breakdown.get("source_reliability_score", 0)
         )
         if source_score >= 5:
-            return 3
+            return 5
         if source_score >= 4:
-            return 2
+            return 4
         if source_score >= 3:
-            return 1
+            return 2
         return 0
 
     def _priority_label(self, final_score: int, eligibility_decision: str) -> str:
-        if eligibility_decision == "not_eligible" or final_score < 50:
+        if eligibility_decision == "not_eligible" or final_score < 40:
             return "not_recommended"
-        if final_score >= 80:
+        if eligibility_decision == "insufficient_information":
+            return "insufficient_information"
+        if final_score >= 75:
             return "high_priority"
-        if final_score >= 65:
+        if final_score >= 58:
             return "medium_priority"
         return "low_priority"
 
@@ -225,7 +240,8 @@ class RankingAgent:
             "high_priority": 0,
             "medium_priority": 1,
             "low_priority": 2,
-            "not_recommended": 3,
+            "insufficient_information": 3,
+            "not_recommended": 4,
         }.get(priority_label, 4)
 
     def _clean_list(self, value: object) -> list[str]:

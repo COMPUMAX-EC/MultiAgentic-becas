@@ -55,7 +55,9 @@ class ExtractionAgentTests(unittest.TestCase):
         agent = ExtractionAgent()
         scholarships = agent.extract_scholarships([self.page_result])
 
-        self.assertEqual(scholarships, [])
+        self.assertEqual(len(scholarships), 1)
+        self.assertEqual(scholarships[0]["source_url"], self.page_result["url"])
+        self.assertEqual(scholarships[0]["display_link"], self.page_result["url"])
         self.assertEqual(len(agent.extraction_errors), 1)
 
     @patch("agent.extraction_agent.generate_text")
@@ -86,7 +88,8 @@ class ExtractionAgentTests(unittest.TestCase):
         agent = ExtractionAgent()
         scholarships = agent.extract_scholarships([self.page_result])
 
-        self.assertEqual(scholarships, [])
+        self.assertEqual(len(scholarships), 1)
+        self.assertEqual(scholarships[0]["source_url"], self.page_result["url"])
         self.assertEqual(len(agent.extraction_errors), 1)
 
     @patch("agent.extraction_agent.generate_text")

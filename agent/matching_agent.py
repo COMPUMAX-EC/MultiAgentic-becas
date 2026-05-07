@@ -145,7 +145,7 @@ class MatchingAgent:
             if llm_result is not None:
                 evaluation = self._merge_llm_result(evaluation, llm_result)
 
-        return build_match_result(
+        match_result = build_match_result(
             scholarship_name=scholarship.get("scholarship_name"),
             source_url=scholarship.get("source_url"),
             compatibility_score=evaluation["compatibility_score"],
@@ -156,6 +156,16 @@ class MatchingAgent:
             score_breakdown=evaluation["score_breakdown"],
             recommendation_reason=evaluation["recommendation_reason"],
         )
+        match_result.update(
+            {
+                "display_link": scholarship.get("display_link"),
+                "official_link": scholarship.get("official_link"),
+                "application_url": scholarship.get("application_url"),
+                "pdf_url": scholarship.get("pdf_url"),
+                "source_type": scholarship.get("source_type"),
+            }
+        )
+        return match_result
 
     def _evaluate_deterministically(
         self, normalized_profile: dict, scholarship: dict
@@ -273,7 +283,7 @@ class MatchingAgent:
                 deadline,
             )
         )
-        critical_block = nationality["blocked"] or academic["blocked"] or deadline["blocked"]
+        critical_block = deadline["blocked"]
 
         eligibility_decision = self._choose_decision(
             compatibility_score=compatibility_score,
@@ -313,7 +323,7 @@ class MatchingAgent:
 
         if not scholarship_nationalities:
             return self._score_result(
-                score=10,
+                score=12,
                 risk=["Eligible nationalities are not clearly specified."],
                 unknown=True,
             )
@@ -339,9 +349,9 @@ class MatchingAgent:
             )
 
         return self._score_result(
-            score=0,
+            score=8,
             missing=[f"Nationality may not be eligible for {profile_nationality} applicants."],
-            blocked=True,
+            risk=["Nationality eligibility needs confirmation from the source page."],
         )
 
     def _score_academic_level(
@@ -356,7 +366,7 @@ class MatchingAgent:
 
         if not scholarship_level:
             return self._score_result(
-                score=10,
+                score=12,
                 risk=["Scholarship academic level is not clearly specified."],
                 unknown=True,
             )
@@ -368,9 +378,9 @@ class MatchingAgent:
             )
 
         return self._score_result(
-            score=0,
+            score=6,
             missing=["Academic level does not match the scholarship target level."],
-            blocked=True,
+            risk=["Academic level fit should be checked on the source page."],
         )
 
     def _score_field(
@@ -388,7 +398,7 @@ class MatchingAgent:
 
         if not scholarship_fields:
             return self._score_result(
-                score=10,
+                score=12,
                 risk=["Scholarship field restrictions are not clearly specified."],
                 unknown=True,
             )
@@ -400,7 +410,7 @@ class MatchingAgent:
             )
 
         return self._score_result(
-            score=0,
+            score=6,
             missing=["Field of study does not clearly match the scholarship focus."],
             risk=["Scholarship field coverage may be narrower than the user profile."],
         )
@@ -410,7 +420,7 @@ class MatchingAgent:
     ) -> dict:
         if not scholarship_country:
             return self._score_result(
-                score=7,
+                score=9,
                 risk=["Scholarship destination country is unknown."],
                 unknown=True,
             )
@@ -422,7 +432,7 @@ class MatchingAgent:
             )
 
         return self._score_result(
-            score=0,
+            score=4,
             risk=["Scholarship country is outside the target country preferences."],
         )
 
@@ -431,7 +441,7 @@ class MatchingAgent:
     ) -> dict:
         if not scholarship_languages:
             return self._score_result(
-                score=7,
+                score=10,
                 risk=["Language requirements are not clearly specified."],
                 unknown=True,
             )
@@ -472,7 +482,7 @@ class MatchingAgent:
 
         if missing:
             return self._score_result(
-                score=0,
+                score=5,
                 matched=matched,
                 missing=missing,
                 risk=risk,
@@ -503,7 +513,7 @@ class MatchingAgent:
     def _score_funding(self, profile_budget: object, scholarship_benefits: list[str]) -> dict:
         if not scholarship_benefits:
             return self._score_result(
-                score=2,
+                score=3,
                 risk=["Funding details are limited or unclear."],
                 unknown=True,
             )
@@ -634,16 +644,16 @@ class MatchingAgent:
         ):
             return "strong_match"
 
-        if compatibility_score >= settings.MATCHING_MIN_COMPATIBILITY_SCORE:
+        if compatibility_score >= 45:
             return "possible_match"
 
-        if unknown_count >= 3:
+        if unknown_count >= 4:
             return "insufficient_information"
 
-        if compatibility_score >= 25:
+        if compatibility_score >= 28:
             return "weak_match"
 
-        return "not_eligible"
+        return "insufficient_information"
 
     def _should_use_llm(self, evaluation: dict) -> bool:
         return settings.MATCHING_USE_LLM and (

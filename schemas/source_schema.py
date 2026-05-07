@@ -3,8 +3,15 @@ from __future__ import annotations
 
 ALLOWED_SOURCE_TYPES = {
     "official_university",
+    "official_institute",
+    "official_institution",
     "official_government",
     "official_organization",
+    "official_foundation",
+    "official_company",
+    "official_pdf",
+    "official_announcement",
+    "verified_news",
     "trusted_portal",
     "scholarship_database",
     "uncertain_source",
@@ -45,6 +52,7 @@ def build_validated_source(
         "reliability_score": _clamp_score(reliability_score),
         "relevance_score": _clamp_score(relevance_score),
         "decision": decision,
+        "acceptance_status": _acceptance_status(decision),
         "reasons": reasons,
         "risk_flags": risk_flags,
     }
@@ -52,3 +60,11 @@ def build_validated_source(
 
 def _clamp_score(score: int) -> int:
     return max(0, min(100, int(score)))
+
+
+def _acceptance_status(decision: str) -> str:
+    if decision == "accept":
+        return "accepted"
+    if decision == "review":
+        return "accepted_with_warning"
+    return "rejected"

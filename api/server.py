@@ -68,8 +68,15 @@ REQUIRED_SEARCH_STEP_NAMES = (
 )
 SOURCE_POLICY_ALLOWED_TYPES = {
     "official_university",
+    "official_institute",
+    "official_institution",
     "official_government",
     "official_organization",
+    "official_foundation",
+    "official_company",
+    "official_pdf",
+    "official_announcement",
+    "verified_news",
     "trusted_portal",
 }
 
@@ -162,6 +169,8 @@ async def search_scholarships(request: Request):
     response["pdf_filename"] = parsed_request["pdf_filename"]
     response["search_signature"] = search_signature
     response["filtering_layers"] = build_filtering_layers(normalized_profile)
+    response["workflow_counts"] = pipeline_payload.get("workflow_counts", {})
+    ensure_response_display_links(response)
     return response
 
 
@@ -272,11 +281,28 @@ def run_live_search_pipeline(
     page_results: list[dict] = []
     scholarships: list[dict] = []
     active_scholarships: list[dict] = []
+    link_ready_scholarships: list[dict] = []
     matching_results: list[dict] = []
     ranked_results: list[dict] = []
+    workflow_counts = {
+        "generated_queries_count": 0,
+        "sources_found_count": 0,
+        "sources_accepted_count": 0,
+        "sources_accepted_with_warning_count": 0,
+        "sources_rejected_count": 0,
+        "pages_read_count": 0,
+        "scholarships_extracted_count": 0,
+        "scholarships_with_useful_link_count": 0,
+        "expired_rejected_count": 0,
+        "matched_count": 0,
+        "ranked_count": 0,
+        "recommended_count": 0,
+        "less_recommended_count": 0,
+    }
 
     try:
         queries = QUERY_AGENT.generate_queries(normalized_profile)
+        workflow_counts["generated_queries_count"] = len(queries)
         workflow_steps.append(
             build_workflow_step(
                 "Generating global scholarship search queries",
@@ -295,6 +321,7 @@ def run_live_search_pipeline(
 
     try:
         candidate_results = SEARCH_AGENT.search(queries)
+        workflow_counts["sources_found_count"] = len(candidate_results)
         workflow_steps.append(
             build_workflow_step(
                 "Searching global scholarship sources",
@@ -314,20 +341,22 @@ def run_live_search_pipeline(
     try:
         validated_sources = SOURCE_VALIDATOR_AGENT.validate_sources(candidate_results)
         accepted_sources = filter_policy_accepted_sources(validated_sources)
-        rejected_by_policy = len(validated_sources) - len(accepted_sources)
+        source_counts = count_source_acceptance_statuses(validated_sources, accepted_sources)
+        workflow_counts["sources_accepted_count"] = source_counts["accepted"]
+        workflow_counts["sources_accepted_with_warning_count"] = source_counts[
+            "accepted_with_warning"
+        ]
+        workflow_counts["sources_rejected_count"] = source_counts["rejected"]
         workflow_steps.append(
             build_workflow_step(
                 "Validating official scholarship sources",
                 "completed",
                 len(accepted_sources),
                 (
-                    f"Accepted {len(accepted_sources)} official or trusted sources "
-                    f"from {len(validated_sources)} validated candidates."
-                    + (
-                        f" Rejected {rejected_by_policy} sources by policy."
-                        if rejected_by_policy
-                        else ""
-                    )
+                    f"Accepted {source_counts['accepted']} sources and "
+                    f"{source_counts['accepted_with_warning']} sources with warnings "
+                    f"from {len(validated_sources)} validated candidates. "
+                    f"Rejected {source_counts['rejected']} sources."
                 ),
             )
         )
@@ -346,6 +375,7 @@ def run_live_search_pipeline(
             accepted_sources,
         )
         readable_page_count = count_readable_pages(page_results)
+        workflow_counts["pages_read_count"] = readable_page_count
         workflow_steps.append(
             build_workflow_step(
                 "Reading scholarship pages",
@@ -368,7 +398,13 @@ def run_live_search_pipeline(
     try:
         scholarships = EXTRACTION_AGENT.extract_scholarships(page_results)
         active_scholarships = filter_active_scholarships(scholarships)
+        link_ready_scholarships = prepare_scholarships_for_matching(active_scholarships)
         expired_count = len(scholarships) - len(active_scholarships)
+        workflow_counts["scholarships_extracted_count"] = len(scholarships)
+        workflow_counts["expired_rejected_count"] = expired_count
+        workflow_counts["scholarships_with_useful_link_count"] = len(
+            link_ready_scholarships
+        )
         errors.extend(
             normalize_pipeline_errors(
                 "Extraction",
@@ -379,9 +415,10 @@ def run_live_search_pipeline(
             build_workflow_step(
                 "Extracting scholarship data",
                 "completed",
-                len(active_scholarships),
+                len(link_ready_scholarships),
                 (
-                    f"Extracted {len(active_scholarships)} active scholarship records."
+                    f"Extracted {len(scholarships)} scholarship records and kept "
+                    f"{len(link_ready_scholarships)} active records with useful links."
                     + (
                         f" Filtered {expired_count} expired or closed records."
                         if expired_count
@@ -399,9 +436,10 @@ def run_live_search_pipeline(
         )
 
     try:
-        matching_payload = run_matching(normalized_profile, active_scholarships)
+        matching_payload = run_matching(normalized_profile, link_ready_scholarships)
         matching_results = matching_payload["matching_results"]
         matching_summary = matching_payload["summary"]
+        workflow_counts["matched_count"] = len(matching_results)
         errors.extend(
             normalize_pipeline_errors("Matching", matching_summary.get("errors", []))
         )
@@ -423,8 +461,14 @@ def run_live_search_pipeline(
 
     try:
         ranking_payload = run_ranking(matching_results)
-        ranked_results = ranking_payload["ranked_results"]
+        ranked_results = filter_ranked_results_with_links(ranking_payload["ranked_results"])
         ranking_summary = ranking_payload["summary"]
+        workflow_counts["ranked_count"] = len(ranked_results)
+        recommended_results, less_recommended_results = split_recommendations(
+            normalize_recommendation_list(ranked_results)
+        )
+        workflow_counts["recommended_count"] = len(recommended_results)
+        workflow_counts["less_recommended_count"] = len(less_recommended_results)
         errors.extend(
             normalize_pipeline_errors("Ranking", ranking_summary.get("errors", []))
         )
@@ -477,6 +521,7 @@ def run_live_search_pipeline(
         "recommended": [],
         "less_recommended": [],
         "errors": dedupe_text_values(errors),
+        "workflow_counts": workflow_counts,
     }
 
 
@@ -514,10 +559,51 @@ def build_failed_pipeline_payload(
     }
 
 
+def ensure_response_display_links(response: dict) -> None:
+    for key in (
+        "ranked_results",
+        "recommended",
+        "less_recommended",
+        "top_recommendations",
+        "recommendations",
+        "results",
+    ):
+        records = response.get(key)
+        if not isinstance(records, list):
+            continue
+        for record in records:
+            if isinstance(record, dict):
+                record["display_link"] = build_display_link(record)
+
+
 def filter_policy_accepted_sources(validated_sources: list[dict]) -> list[dict]:
     return [
         source for source in validated_sources if is_policy_accepted_source(source)
     ]
+
+
+def count_source_acceptance_statuses(
+    validated_sources: list[dict],
+    accepted_sources: list[dict],
+) -> dict[str, int]:
+    accepted_urls = {source.get("url") for source in accepted_sources}
+    accepted = 0
+    accepted_with_warning = 0
+    for source in accepted_sources:
+        if source.get("acceptance_status") == "accepted_with_warning" or source.get(
+            "decision"
+        ) == "review":
+            accepted_with_warning += 1
+        else:
+            accepted += 1
+
+    return {
+        "accepted": accepted,
+        "accepted_with_warning": accepted_with_warning,
+        "rejected": len(
+            [source for source in validated_sources if source.get("url") not in accepted_urls]
+        ),
+    }
 
 
 def is_policy_accepted_source(source: dict) -> bool:
@@ -552,6 +638,10 @@ def enrich_page_results_with_source_metadata(
         enriched_page_result["source_reliability_score"] = source.get(
             "reliability_score"
         )
+        enriched_page_result["source_acceptance_status"] = source.get(
+            "acceptance_status"
+        )
+        enriched_page_result["target_country"] = source.get("target_country")
         enriched_page_results.append(enriched_page_result)
 
     return enriched_page_results
@@ -572,6 +662,68 @@ def filter_active_scholarships(scholarships: list[dict]) -> list[dict]:
         for scholarship in scholarships
         if not has_expired_or_closed_scholarship_signal(scholarship)
     ]
+
+
+def prepare_scholarships_for_matching(scholarships: list[dict]) -> list[dict]:
+    prepared_scholarships: list[dict] = []
+    for scholarship in scholarships:
+        prepared_scholarship = dict(scholarship)
+        prepared_scholarship["display_link"] = build_display_link(prepared_scholarship)
+        if not prepared_scholarship["display_link"]:
+            continue
+        prepared_scholarships.append(prepared_scholarship)
+
+    return dedupe_scholarships_by_best_link(prepared_scholarships)
+
+
+def filter_ranked_results_with_links(ranked_results: list[dict]) -> list[dict]:
+    filtered_results = []
+    for result in ranked_results:
+        filtered_result = dict(result)
+        filtered_result["display_link"] = build_display_link(filtered_result)
+        if not filtered_result["display_link"]:
+            continue
+        filtered_results.append(filtered_result)
+    return filtered_results
+
+
+def dedupe_scholarships_by_best_link(scholarships: list[dict]) -> list[dict]:
+    best_by_key: dict[str, dict] = {}
+    for scholarship in scholarships:
+        key = get_scholarship_dedupe_key(scholarship)
+        current = best_by_key.get(key)
+        if current is None or link_quality_score(scholarship) > link_quality_score(current):
+            best_by_key[key] = scholarship
+    return list(best_by_key.values())
+
+
+def get_scholarship_dedupe_key(scholarship: dict) -> str:
+    source_url = normalize_optional_text(scholarship.get("source_url")).lower()
+    name = normalize_optional_text(scholarship.get("scholarship_name")).lower()
+    if source_url:
+        return f"url:{source_url}"
+    return f"name:{name}"
+
+
+def link_quality_score(scholarship: dict) -> int:
+    if normalize_optional_text(scholarship.get("official_link")):
+        return 4
+    if normalize_optional_text(scholarship.get("application_url")):
+        return 3
+    if normalize_optional_text(scholarship.get("source_url")):
+        return 2
+    if normalize_optional_text(scholarship.get("pdf_url")):
+        return 1
+    return 0
+
+
+def build_display_link(record: dict) -> str:
+    return (
+        normalize_optional_text(record.get("official_link"))
+        or normalize_optional_text(record.get("application_url"))
+        or normalize_optional_text(record.get("source_url"))
+        or normalize_optional_text(record.get("pdf_url"))
+    )
 
 
 def has_expired_or_closed_scholarship_signal(scholarship: dict) -> bool:
@@ -1058,6 +1210,8 @@ def normalize_recommendation_list(records: list[Any]):
             continue
 
         normalized_result = normalize_recommendation(record, index)
+        if not normalize_optional_text(normalized_result.get("display_link")):
+            continue
         dedupe_key = get_recommendation_key(normalized_result)
         if dedupe_key in seen_keys:
             continue
@@ -1085,12 +1239,11 @@ def normalize_recommendation(record: dict, index: int):
             record.get("scholarship_name") or record.get("name")
         )
         or "Untitled scholarship",
-        "source_url": normalize_optional_text(
-            record.get("source_url")
-            or record.get("official_link")
-            or record.get("url")
-            or record.get("link")
-        ),
+        "source_url": normalize_optional_text(record.get("source_url")),
+        "official_link": normalize_optional_text(record.get("official_link")),
+        "application_url": normalize_optional_text(record.get("application_url")),
+        "pdf_url": normalize_optional_text(record.get("pdf_url")),
+        "display_link": build_display_link(record),
         "final_score": final_score,
         "compatibility_score": compatibility_score,
         "eligibility_decision": eligibility_decision,
@@ -1128,7 +1281,11 @@ def split_recommendations(ranked_results: list[dict]):
             less_recommended.append(result)
 
     if not recommended and low_priority_candidates:
-        recommended = low_priority_candidates[:]
+        recommended = [
+            result
+            for result in low_priority_candidates
+            if normalize_score(result.get("final_score")) >= 45
+        ] or low_priority_candidates[:3]
         less_recommended = [
             result for result in less_recommended if result not in recommended
         ]
@@ -1191,7 +1348,13 @@ def normalize_priority_label(value: Any):
         return "medium_priority" if value >= 65 else "low_priority"
 
     priority = normalize_optional_text(value).lower()
-    if priority in {"high_priority", "medium_priority", "low_priority", "not_recommended"}:
+    if priority in {
+        "high_priority",
+        "medium_priority",
+        "low_priority",
+        "insufficient_information",
+        "not_recommended",
+    }:
         return priority
     if priority == "strong_match":
         return "high_priority"
@@ -1199,7 +1362,9 @@ def normalize_priority_label(value: Any):
         return "medium_priority"
     if priority == "weak_match":
         return "low_priority"
-    if priority in {"not_eligible", "insufficient_information"}:
+    if priority == "insufficient_information":
+        return "insufficient_information"
+    if priority in {"not_eligible"}:
         return "not_recommended"
     return "not_recommended"
 
@@ -1209,7 +1374,9 @@ def count_recommendations(payload: dict):
 
 
 def get_recommendation_key(result: dict):
-    source_url = normalize_optional_text(result.get("source_url")).lower()
+    source_url = normalize_optional_text(
+        result.get("display_link") or result.get("source_url")
+    ).lower()
     if source_url:
         return f"url:{source_url}"
     return f"name:{normalize_optional_text(result.get('scholarship_name')).lower()}"

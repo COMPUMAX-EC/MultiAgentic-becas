@@ -5,7 +5,7 @@ type ScholarshipRowProps = {
 };
 
 export function ScholarshipRow({ result }: ScholarshipRowProps) {
-  const sourceUrl = result.source_url.trim();
+  const sourceUrl = (result.display_link || result.source_url).trim();
   const hasLink = Boolean(sourceUrl && sourceUrl !== "#");
 
   return (

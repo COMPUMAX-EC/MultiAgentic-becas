@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-MAX_GENERATED_QUERIES = 8
+MAX_GENERATED_QUERIES = 20
 REQUIRED_QUERY_FIELDS = ("query", "target_country", "reason", "priority")
 REQUIRED_RESULT_FIELDS = (
     "title",

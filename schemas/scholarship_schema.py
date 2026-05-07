@@ -45,6 +45,12 @@ def validate_scholarship_extractions(
         source_url = _clean_text(source_metadata.get("source_url"))
         if not source_url:
             raise ScholarshipValidationError("source_url must be preserved.")
+        official_link = _clean_text(raw_scholarship.get("official_link"))
+        application_url = _clean_text(raw_scholarship.get("application_url"))
+        pdf_url = _clean_text(raw_scholarship.get("pdf_url")) or _clean_text(
+            source_metadata.get("pdf_url")
+        )
+        display_link = _first_text(official_link, application_url, source_url, pdf_url)
 
         cleaned_scholarship = {
             "scholarship_name": scholarship_name,
@@ -63,6 +69,10 @@ def validate_scholarship_extractions(
             "requirements": _clean_list(raw_scholarship.get("requirements")),
             "application_status": application_status,
             "source_url": source_url,
+            "official_link": official_link,
+            "application_url": application_url,
+            "pdf_url": pdf_url,
+            "display_link": display_link,
             "source_type": _clean_text(source_metadata.get("source_type")),
             "source_reliability_score": _clean_score(
                 source_metadata.get("source_reliability_score")
@@ -118,3 +128,10 @@ def _clean_application_status(value: object) -> str:
     if normalized_value not in ALLOWED_APPLICATION_STATUSES:
         return "unknown"
     return normalized_value
+
+
+def _first_text(*values: str | None) -> str:
+    for value in values:
+        if value:
+            return value
+    return ""

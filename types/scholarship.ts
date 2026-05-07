@@ -2,6 +2,7 @@ export type ScholarshipPriorityLabel =
   | "high_priority"
   | "medium_priority"
   | "low_priority"
+  | "insufficient_information"
   | "not_recommended";
 
 export type WorkflowStepStatus =
@@ -34,6 +35,10 @@ export type ScholarshipResult = {
   risk_factors: string[];
   missing_requirements: string[];
   source_url: string;
+  official_link?: string;
+  application_url?: string;
+  pdf_url?: string;
+  display_link?: string;
   benefits?: string[];
   requirements?: string[];
   deadline?: string;

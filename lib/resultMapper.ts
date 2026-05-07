@@ -54,8 +54,16 @@ export function mapScholarshipResponseDetails(
         risk_factors: listValue(item.risk_factors),
         missing_requirements: listValue(item.missing_requirements),
         source_url:
-          textValue(item.source_url) ||
+          textValue(item.source_url) || "",
+        official_link: textValue(item.official_link),
+        application_url: textValue(item.application_url),
+        pdf_url: textValue(item.pdf_url),
+        display_link:
+          textValue(item.display_link) ||
           textValue(item.official_link) ||
+          textValue(item.application_url) ||
+          textValue(item.source_url) ||
+          textValue(item.pdf_url) ||
           textValue(item.url) ||
           textValue(item.link) ||
           "",
@@ -211,8 +219,11 @@ function dedupeScholarshipRecords(records: unknown[]) {
   for (const record of records) {
     const item = isRecord(record) ? record : {};
     const urlKey =
-      textValue(item.source_url) ||
+      textValue(item.display_link) ||
       textValue(item.official_link) ||
+      textValue(item.application_url) ||
+      textValue(item.source_url) ||
+      textValue(item.pdf_url) ||
       textValue(item.url) ||
       textValue(item.link);
     const nameKey =
@@ -333,6 +344,7 @@ function priorityValue(value: unknown): ScholarshipPriorityLabel {
     priority === "high_priority" ||
     priority === "medium_priority" ||
     priority === "low_priority" ||
+    priority === "insufficient_information" ||
     priority === "not_recommended"
   ) {
     return priority;
@@ -350,10 +362,11 @@ function priorityValue(value: unknown): ScholarshipPriorityLabel {
     return "low_priority";
   }
 
-  if (
-    priority === "not_eligible" ||
-    priority === "insufficient_information"
-  ) {
+  if (priority === "insufficient_information") {
+    return "insufficient_information";
+  }
+
+  if (priority === "not_eligible") {
     return "not_recommended";
   }
 
