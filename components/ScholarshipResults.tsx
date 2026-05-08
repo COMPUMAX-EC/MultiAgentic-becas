@@ -11,8 +11,7 @@ import {
 } from "../services/scholarshipApi";
 import { WorkflowStep, WorkflowStepStatus } from "../types/scholarship";
 
-const INITIAL_RESULTS_PER_SECTION = 30;
-const RESULT_PAGE_SIZE = 30;
+const LESS_RECOMMENDED_DISPLAY_LIMIT = 10;
 
 type PipelineTemplate = {
   id: string;
@@ -51,7 +50,7 @@ const PIPELINE: PipelineTemplate[] = [
   },
   {
     id: "validate",
-    label: "Validating official scholarship sources",
+    label: "Validating official and verified sources",
     log: () => "Waiting for backend source validation.",
   },
   {
@@ -461,18 +460,6 @@ export function ScholarshipSearchExperience() {
 }
 
 export function ScholarshipResults({ results }: ScholarshipResultsProps) {
-  const [recommendedVisibleCount, setRecommendedVisibleCount] = useState(
-    INITIAL_RESULTS_PER_SECTION,
-  );
-  const [lessRecommendedVisibleCount, setLessRecommendedVisibleCount] = useState(
-    INITIAL_RESULTS_PER_SECTION,
-  );
-
-  useEffect(() => {
-    setRecommendedVisibleCount(INITIAL_RESULTS_PER_SECTION);
-    setLessRecommendedVisibleCount(INITIAL_RESULTS_PER_SECTION);
-  }, [results]);
-
   if (!results.length) {
     return (
       <section className="results-section">
@@ -498,13 +485,9 @@ export function ScholarshipResults({ results }: ScholarshipResultsProps) {
       (result) => !isRecommended(result, hasHighOrMediumRecommendation),
     ),
   );
-  const visibleRecommendedResults = recommendedResults.slice(
-    0,
-    recommendedVisibleCount,
-  );
   const visibleLessRecommendedResults = lessRecommendedResults.slice(
     0,
-    lessRecommendedVisibleCount,
+    LESS_RECOMMENDED_DISPLAY_LIMIT,
   );
 
   return (
@@ -516,31 +499,13 @@ export function ScholarshipResults({ results }: ScholarshipResultsProps) {
 
       <ResultGroup
         title="Recomendadas"
-        results={visibleRecommendedResults}
-        totalCount={recommendedResults.length}
+        results={recommendedResults}
         emptyMessage="No recommended scholarships were found yet."
-        onShowMore={
-          recommendedVisibleCount < recommendedResults.length
-            ? () =>
-                setRecommendedVisibleCount(
-                  (currentCount) => currentCount + RESULT_PAGE_SIZE,
-                )
-            : undefined
-        }
       />
       <ResultGroup
         title="No tan recomendadas"
         results={visibleLessRecommendedResults}
-        totalCount={lessRecommendedResults.length}
         emptyMessage="No additional scholarships were found."
-        onShowMore={
-          lessRecommendedVisibleCount < lessRecommendedResults.length
-            ? () =>
-                setLessRecommendedVisibleCount(
-                  (currentCount) => currentCount + RESULT_PAGE_SIZE,
-                )
-            : undefined
-        }
         secondary
       />
     </section>
@@ -550,16 +515,12 @@ export function ScholarshipResults({ results }: ScholarshipResultsProps) {
 function ResultGroup({
   title,
   results,
-  totalCount,
   emptyMessage = "No scholarship recommendations available yet.",
-  onShowMore,
   secondary = false,
 }: {
   title: string;
   results: ScholarshipResult[];
-  totalCount: number;
   emptyMessage?: string;
-  onShowMore?: () => void;
   secondary?: boolean;
 }) {
   return (
@@ -574,11 +535,6 @@ function ResultGroup({
       ) : (
         <p className="empty-results">{emptyMessage}</p>
       )}
-      {onShowMore ? (
-        <button className="show-more-results" type="button" onClick={onShowMore}>
-          Show more ({results.length} of {totalCount})
-        </button>
-      ) : null}
     </section>
   );
 }
@@ -587,7 +543,18 @@ function isRecommended(
   result: ScholarshipResult,
   hasHighOrMediumRecommendation: boolean,
 ) {
+  if (result.result_section === "recommended") {
+    return true;
+  }
+  if (result.result_section === "less_recommended") {
+    return false;
+  }
+
   if (["high_priority", "medium_priority"].includes(result.priority_label)) {
+    return true;
+  }
+
+  if (["possible_match", "strong_match"].includes(result.priority_label)) {
     return true;
   }
 
@@ -616,7 +583,7 @@ function dedupeScholarships(results: ScholarshipResult[]) {
 }
 
 function getScholarshipKey(result: ScholarshipResult) {
-  const link = (result.display_link || result.source_url).trim().toLowerCase();
+  const link = getResultDisplayLink(result).toLowerCase();
   if (link && link !== "#") {
     return `link:${link}`;
   }
@@ -624,12 +591,30 @@ function getScholarshipKey(result: ScholarshipResult) {
   return `name:${result.scholarship_name.trim().toLowerCase()}`;
 }
 
+function getResultDisplayLink(result: ScholarshipResult) {
+  return (
+    result.display_link ||
+    result.official_link ||
+    result.application_url ||
+    result.source_url ||
+    result.pdf_url ||
+    ""
+  ).trim();
+}
+
 function sortResults(results: ScholarshipResult[]) {
   return [...results].sort(
     (firstResult, secondResult) =>
       secondResult.final_score - firstResult.final_score ||
-      secondResult.compatibility_score - firstResult.compatibility_score,
+      secondResult.compatibility_score - firstResult.compatibility_score ||
+      getSortRank(firstResult) - getSortRank(secondResult),
   );
+}
+
+function getSortRank(result: ScholarshipResult) {
+  return typeof result.rank === "number" && Number.isFinite(result.rank)
+    ? result.rank
+    : Number.MAX_SAFE_INTEGER;
 }
 
 function createSteps(activeIndex: number, fileName: string | null): WorkflowStep[] {

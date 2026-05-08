@@ -1,40 +1,3 @@
-# Module Contracts
-
-## Profile Input
-
-Input:
-data/profiles/sample_profile.json
-
-Required fields:
-- nationality
-- country_of_residence
-- languages
-- academic_level
-- field_of_study
-- interests
-- target_countries
-- scholarship_type
-- budget
-- preferred_modality
-
-## Query Generation Output
-
-Output:
-list of search queries
-
-Required fields:
-- query
-- target_country
-- reason
-
-## Search Result Output
-
-Required fields:
-- title
-- url
-- snippet
-- source
-
 ## Scholarship Extraction Output
 
 Required fields:
@@ -49,13 +12,57 @@ Required fields:
 - deadline
 - requirements
 - source_url
+- official_link
+- application_url
+- pdf_url
+- display_link
+- source_validation_status
 
-## Matching Output
+## Source Validation Output
+
+Required fields:
+- url
+- source_type
+- validation_status
+
+Allowed validation_status:
+- accepted
+- accepted_with_warning
+- rejected
+
+Accepted source types:
+- university
+- institute
+- institution
+- government
+- organization
+- foundation
+- company
+- verified_news
+- verified_magazine
+- verified_newspaper
+- official_pdf
+
+## Final Result Output
 
 Required fields:
 - scholarship_name
-- compatibility_score
-- matched_factors
-- missing_or_risk_factors
-- recommendation_reason
+- display_link
 - source_url
+- official_link
+- priority_label
+- final_score
+- compatibility_score
+- eligibility_decision
+
+## Frontend Display Contract
+
+Recommended section:
+- show all recommended scholarships
+
+Less recommended section:
+- show maximum 10
+
+Each visible result:
+- scholarship name
+- Open button using display_link

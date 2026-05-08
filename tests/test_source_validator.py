@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from agent.source_validator_agent import SourceValidatorAgent
+from api.server import is_policy_accepted_source
 
 
 class SourceValidatorAgentTests(unittest.TestCase):
@@ -21,8 +22,10 @@ class SourceValidatorAgentTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(result["source_type"], "official_university")
+        self.assertEqual(result["source_type"], "university")
         self.assertEqual(result["decision"], "accept")
+        self.assertEqual(result["validation_status"], "accepted")
+        self.assertEqual(result["source_domain"], "example.edu")
 
     def test_government_source_accepted(self) -> None:
         result = self.agent.validate_source(
@@ -36,10 +39,31 @@ class SourceValidatorAgentTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(result["source_type"], "official_government")
+        self.assertEqual(result["source_type"], "government")
         self.assertEqual(result["decision"], "accept")
+        self.assertEqual(result["validation_status"], "accepted")
 
-    def test_blog_or_media_source_reviewed_or_rejected(self) -> None:
+    def test_verified_news_source_accepted_with_warning(self) -> None:
+        result = self.agent.validate_source(
+            {
+                "title": "New scholarship call opens for international students",
+                "url": "https://www.reuters.com/world/scholarship-call-international-students",
+                "snippet": "A verified news report says the scholarship applications are open for students.",
+                "query": "verified scholarship news",
+                "target_country": "Canada",
+                "priority": 1,
+            }
+        )
+
+        self.assertEqual(result["source_type"], "verified_news")
+        self.assertEqual(result["decision"], "review")
+        self.assertEqual(result["validation_status"], "accepted_with_warning")
+        self.assertTrue(
+            any("informational source" in warning for warning in result["warnings"])
+        )
+        self.assertTrue(is_policy_accepted_source(result))
+
+    def test_generic_blog_rejected(self) -> None:
         result = self.agent.validate_source(
             {
                 "title": "Top Scholarships You Should Know",
@@ -51,8 +75,9 @@ class SourceValidatorAgentTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(result["source_type"], "blog_or_media")
-        self.assertIn(result["decision"], {"review", "reject"})
+        self.assertEqual(result["source_type"], "generic_blog")
+        self.assertEqual(result["decision"], "reject")
+        self.assertEqual(result["validation_status"], "rejected")
 
     def test_low_authority_aggregator_rejected_by_policy_type(self) -> None:
         result = self.agent.validate_source(
@@ -67,7 +92,22 @@ class SourceValidatorAgentTests(unittest.TestCase):
         )
 
         self.assertEqual(result["source_type"], "scholarship_database")
-        self.assertIn(result["decision"], {"review", "reject"})
+        self.assertEqual(result["decision"], "reject")
+
+    def test_unknown_deadline_adds_warning_without_rejection(self) -> None:
+        result = self.agent.validate_source(
+            {
+                "title": "Computer Science Scholarships",
+                "url": "https://www.example.edu/scholarships/computer-science",
+                "snippet": "Scholarships and financial aid for international students.",
+                "query": "computer science scholarships",
+                "target_country": "United States",
+                "priority": 1,
+            }
+        )
+
+        self.assertEqual(result["validation_status"], "accepted")
+        self.assertIn("Deadline could not be verified.", result["warnings"])
 
     def test_expired_or_closed_source_rejected(self) -> None:
         result = self.agent.validate_source(
@@ -83,6 +123,7 @@ class SourceValidatorAgentTests(unittest.TestCase):
 
         self.assertEqual(result["source_type"], "expired_or_closed")
         self.assertEqual(result["decision"], "reject")
+        self.assertEqual(result["validation_status"], "rejected")
 
     def test_unrelated_source_rejected(self) -> None:
         result = self.agent.validate_source(
@@ -113,6 +154,27 @@ class SourceValidatorAgentTests(unittest.TestCase):
 
         self.assertEqual(result["source_type"], "spam_or_low_quality")
         self.assertEqual(result["decision"], "reject")
+
+    def test_validated_source_preserves_metadata(self) -> None:
+        result = self.agent.validate_source(
+            {
+                "title": "Scholarship Result",
+                "url": "https://www.example.edu/scholarships/result",
+                "snippet": "Scholarship funding for international students.",
+                "source": "duckduckgo",
+                "query": "original query",
+                "query_used": "fallback query",
+                "target_country": "Canada",
+                "priority": 2,
+            }
+        )
+
+        self.assertEqual(result["title"], "Scholarship Result")
+        self.assertEqual(result["url"], "https://www.example.edu/scholarships/result")
+        self.assertEqual(result["source"], "duckduckgo")
+        self.assertEqual(result["query_used"], "fallback query")
+        self.assertIn("validation_reason", result)
+        self.assertIsInstance(result["warnings"], list)
 
 
 if __name__ == "__main__":

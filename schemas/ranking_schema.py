@@ -4,9 +4,11 @@ from __future__ import annotations
 ALLOWED_PRIORITY_LABELS = {
     "high_priority",
     "medium_priority",
+    "possible_match",
     "low_priority",
     "insufficient_information",
     "not_recommended",
+    "rejected",
 }
 
 

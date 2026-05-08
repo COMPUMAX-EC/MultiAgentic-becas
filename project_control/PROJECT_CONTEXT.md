@@ -25,8 +25,11 @@ AMD Developer Cloud / vLLM adapter when available.
 
 Current constraints:
 - No UI
-- No mobile app
-- No PWA
+- Web interface is now part of the project.
+- No login, no registration, no dashboard.
+- The web only collects profile text/PDF and displays results.
+- The core search logic remains in the Python backend.
+- Codex must not build unrelated UI, mobile app, PWA, or dashboard.
 - No n8n
 - No documentation generation by Codex
 - Local-first execution

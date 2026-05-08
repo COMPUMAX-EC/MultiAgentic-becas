@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from utils.url_utils import first_useful_url, normalize_useful_url
 
 ALLOWED_APPLICATION_STATUSES = {"open", "closed", "unknown", "upcoming"}
 LIST_FIELDS = (
@@ -42,15 +43,25 @@ def validate_scholarship_extractions(
         application_status = _clean_application_status(
             raw_scholarship.get("application_status")
         )
-        source_url = _clean_text(source_metadata.get("source_url"))
+        source_url = first_useful_url(
+            source_metadata.get("source_url"),
+            source_metadata.get("original_url"),
+            source_metadata.get("url"),
+        )
         if not source_url:
             raise ScholarshipValidationError("source_url must be preserved.")
-        official_link = _clean_text(raw_scholarship.get("official_link"))
-        application_url = _clean_text(raw_scholarship.get("application_url"))
-        pdf_url = _clean_text(raw_scholarship.get("pdf_url")) or _clean_text(
+        official_link = first_useful_url(
+            raw_scholarship.get("official_link"),
+            raw_scholarship.get("official_url"),
+        )
+        application_url = first_useful_url(
+            raw_scholarship.get("application_url"),
+            raw_scholarship.get("apply_url"),
+        )
+        pdf_url = normalize_useful_url(raw_scholarship.get("pdf_url")) or normalize_useful_url(
             source_metadata.get("pdf_url")
         )
-        display_link = _first_text(official_link, application_url, source_url, pdf_url)
+        display_link = first_useful_url(official_link, application_url, source_url, pdf_url)
 
         cleaned_scholarship = {
             "scholarship_name": scholarship_name,
@@ -73,6 +84,8 @@ def validate_scholarship_extractions(
             "application_url": application_url,
             "pdf_url": pdf_url,
             "display_link": display_link,
+            "original_url": source_metadata.get("original_url"),
+            "query_used": source_metadata.get("query_used"),
             "source_type": _clean_text(source_metadata.get("source_type")),
             "source_reliability_score": _clean_score(
                 source_metadata.get("source_reliability_score")

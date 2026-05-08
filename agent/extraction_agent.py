@@ -11,6 +11,7 @@ from schemas.scholarship_schema import (
     validate_scholarship_extractions,
 )
 from utils.json_handler import JsonHandlerError, parse_json_text
+from utils.url_utils import first_useful_url, normalize_useful_url
 
 
 PROMPT_TEMPLATE_PATH = settings.PROJECT_ROOT / "prompts" / "extraction.txt"
@@ -73,10 +74,13 @@ class ExtractionAgent:
     def build_prompt(self, page_result: dict) -> str:
         page_payload = {
             "url": page_result.get("url"),
+            "source_url": page_result.get("source_url") or page_result.get("url"),
+            "original_url": page_result.get("original_url"),
             "title": page_result.get("title"),
             "source_type": page_result.get("source_type"),
             "source_decision": page_result.get("source_decision"),
             "source_acceptance_status": page_result.get("source_acceptance_status"),
+            "query_used": page_result.get("query_used"),
             "cleaned_text": str(page_result.get("cleaned_text") or "")[
                 : settings.EXTRACTION_TEXT_MAX_CHARS
             ],
@@ -85,16 +89,27 @@ class ExtractionAgent:
         return f"{self.prompt_template}\n\nCleaned page content:\n{page_json}"
 
     def _build_source_metadata(self, page_result: dict) -> dict:
-        source_url = page_result.get("url")
+        source_url = first_useful_url(
+            page_result.get("source_url"),
+            page_result.get("original_url"),
+            page_result.get("url"),
+        )
         return {
             "source_url": source_url,
+            "original_url": normalize_useful_url(page_result.get("original_url")) or source_url,
+            "url": normalize_useful_url(page_result.get("url")) or source_url,
+            "query_used": page_result.get("query_used"),
             "source_type": page_result.get("source_type"),
             "source_reliability_score": page_result.get("source_reliability_score"),
             "pdf_url": source_url if str(source_url or "").casefold().endswith(".pdf") else None,
         }
 
     def _build_fallback_scholarship(self, page_result: dict) -> dict | None:
-        source_url = str(page_result.get("url") or "").strip()
+        source_url = first_useful_url(
+            page_result.get("source_url"),
+            page_result.get("original_url"),
+            page_result.get("url"),
+        )
         title = " ".join(str(page_result.get("title") or "").split())
         cleaned_text = str(page_result.get("cleaned_text") or "")
         if not source_url or not title:
@@ -102,7 +117,7 @@ class ExtractionAgent:
 
         official_link = self._extract_useful_link(cleaned_text)
         pdf_url = source_url if source_url.casefold().endswith(".pdf") else ""
-        display_link = official_link or source_url or pdf_url
+        display_link = first_useful_url(official_link, source_url, pdf_url)
         if not display_link:
             return None
 
@@ -123,6 +138,8 @@ class ExtractionAgent:
             "application_url": official_link,
             "pdf_url": pdf_url,
             "display_link": display_link,
+            "original_url": normalize_useful_url(page_result.get("original_url")) or source_url,
+            "query_used": page_result.get("query_used"),
             "source_type": page_result.get("source_type"),
             "source_reliability_score": page_result.get("source_reliability_score"),
             "extraction_confidence": 35,
@@ -131,7 +148,9 @@ class ExtractionAgent:
 
     def _extract_useful_link(self, cleaned_text: str) -> str:
         for match in re.finditer(r"https?://[^\s)>\"]+", cleaned_text):
-            url = match.group(0).rstrip(".,;")
+            url = normalize_useful_url(match.group(0).rstrip(".,;"))
+            if not url:
+                continue
             context_start = max(0, match.start() - 80)
             context_end = min(len(cleaned_text), match.end() + 80)
             context = cleaned_text[context_start:context_end].casefold()

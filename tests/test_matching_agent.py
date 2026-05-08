@@ -45,7 +45,7 @@ class MatchingAgentTests(unittest.TestCase):
     def test_strong_match_when_core_factors_align(self) -> None:
         result = MatchingAgent().match_scholarship(self.profile, self.base_scholarship)
 
-        self.assertEqual(result["eligibility_decision"], "strong_match")
+        self.assertIn(result["eligibility_decision"], {"confirmed_match", "likely_match"})
         self.assertGreaterEqual(result["compatibility_score"], 80)
 
     def test_possible_match_when_nationality_is_unknown(self) -> None:
@@ -54,7 +54,7 @@ class MatchingAgentTests(unittest.TestCase):
 
         result = MatchingAgent().match_scholarship(self.profile, scholarship)
 
-        self.assertEqual(result["eligibility_decision"], "possible_match")
+        self.assertIn(result["eligibility_decision"], {"likely_match", "possible_match"})
         self.assertIn(
             "Eligible nationalities are not clearly specified.",
             result["risk_factors"],
@@ -66,7 +66,7 @@ class MatchingAgentTests(unittest.TestCase):
 
         result = MatchingAgent().match_scholarship(self.profile, scholarship)
 
-        self.assertEqual(result["eligibility_decision"], "not_eligible")
+        self.assertEqual(result["eligibility_decision"], "rejected")
 
     def test_expired_deadline_produces_not_eligible(self) -> None:
         scholarship = dict(self.base_scholarship)
@@ -74,7 +74,7 @@ class MatchingAgentTests(unittest.TestCase):
 
         result = MatchingAgent().match_scholarship(self.profile, scholarship)
 
-        self.assertEqual(result["eligibility_decision"], "not_eligible")
+        self.assertEqual(result["eligibility_decision"], "rejected")
 
     def test_missing_language_requirement_creates_risk_factor(self) -> None:
         scholarship = dict(self.base_scholarship)
@@ -118,8 +118,76 @@ class MatchingAgentTests(unittest.TestCase):
 
         result = MatchingAgent().match_scholarship(self.profile, scholarship)
 
-        self.assertIn(result["eligibility_decision"], {"possible_match", "insufficient_information"})
+        self.assertIn(
+            result["eligibility_decision"],
+            {"likely_match", "possible_match", "insufficient_information"},
+        )
         mock_generate_text.assert_not_called()
+
+    def test_incomplete_but_compatible_scholarship_is_not_rejected(self) -> None:
+        scholarship = dict(self.base_scholarship)
+        scholarship["eligible_nationalities"] = []
+        scholarship["required_languages"] = []
+        scholarship["benefits"] = []
+        scholarship["deadline"] = None
+
+        result = MatchingAgent().match_scholarship(self.profile, scholarship)
+
+        self.assertNotIn(result["eligibility_decision"], {"rejected", "mismatch", "not_eligible"})
+        self.assertGreaterEqual(result["compatibility_score"], 45)
+
+    def test_missing_nationality_is_risk_only(self) -> None:
+        scholarship = dict(self.base_scholarship)
+        scholarship["eligible_nationalities"] = []
+
+        result = MatchingAgent().match_scholarship(self.profile, scholarship)
+
+        self.assertNotEqual(result["eligibility_decision"], "rejected")
+        self.assertTrue(any("nationalities" in risk.lower() for risk in result["risk_factors"]))
+
+    def test_explicit_nationality_mismatch_is_major_penalty(self) -> None:
+        scholarship = dict(self.base_scholarship)
+        scholarship["eligible_nationalities"] = ["Argentinian", "Brazilian"]
+
+        result = MatchingAgent().match_scholarship(self.profile, scholarship)
+
+        self.assertEqual(result["eligibility_decision"], "mismatch")
+        self.assertTrue(any("nationality" in item.lower() for item in result["missing_requirements"]))
+
+    def test_verified_informational_source_good_match_is_kept(self) -> None:
+        scholarship = dict(self.base_scholarship)
+        scholarship["source_type"] = "verified_news"
+        scholarship["source_reliability_score"] = None
+
+        result = MatchingAgent().match_scholarship(self.profile, scholarship)
+
+        self.assertIn(result["eligibility_decision"], {"confirmed_match", "likely_match", "possible_match"})
+        self.assertNotEqual(result["eligibility_decision"], "rejected")
+
+    def test_no_modality_preference_does_not_penalize_different_modality(self) -> None:
+        profile = dict(self.profile)
+        profile["preferred_modality"] = "Any"
+        scholarship = dict(self.base_scholarship)
+        scholarship["modality"] = "online"
+
+        result = MatchingAgent().match_scholarship(profile, scholarship)
+
+        self.assertNotIn(
+            "Scholarship modality conflicts with the user's stated preference.",
+            result["risk_factors"],
+        )
+
+    def test_selected_modality_conflict_adds_risk_without_hard_rejection(self) -> None:
+        scholarship = dict(self.base_scholarship)
+        scholarship["modality"] = "online"
+
+        result = MatchingAgent().match_scholarship(self.profile, scholarship)
+
+        self.assertIn(
+            "Scholarship modality conflicts with the user's stated preference.",
+            result["risk_factors"],
+        )
+        self.assertNotEqual(result["eligibility_decision"], "rejected")
 
 
 if __name__ == "__main__":

@@ -23,7 +23,9 @@ class Settings:
     REMOTE_LLM_TIMEOUT_SECONDS: int
     REMOTE_LLM_ENDPOINT_TYPE: str
     SEARCH_PROVIDER: str
+    SEARCH_MAX_QUERIES: int
     SEARCH_MAX_RESULTS_PER_QUERY: int
+    SEARCH_MAX_GLOBAL_CANDIDATES: int
     SEARCH_TIMEOUT_SECONDS: int
     SEARCH_CACHE_ENABLED: bool
     SOURCE_VALIDATION_USE_LLM: bool
@@ -84,7 +86,21 @@ settings = Settings(
         "REMOTE_LLM_ENDPOINT_TYPE", "openai_compatible"
     ).strip().lower(),
     SEARCH_PROVIDER=os.getenv("SEARCH_PROVIDER", "duckduckgo"),
-    SEARCH_MAX_RESULTS_PER_QUERY=int(os.getenv("SEARCH_MAX_RESULTS_PER_QUERY", "5")),
+    SEARCH_MAX_QUERIES=int(
+        os.getenv("SEARCH_MAX_QUERIES", os.getenv("MAX_SEARCH_QUERIES", "20"))
+    ),
+    SEARCH_MAX_RESULTS_PER_QUERY=int(
+        os.getenv(
+            "SEARCH_MAX_RESULTS_PER_QUERY",
+            os.getenv("MAX_RESULTS_PER_QUERY", "20"),
+        )
+    ),
+    SEARCH_MAX_GLOBAL_CANDIDATES=int(
+        os.getenv(
+            "SEARCH_MAX_GLOBAL_CANDIDATES",
+            os.getenv("MAX_GLOBAL_CANDIDATES", "150"),
+        )
+    ),
     SEARCH_TIMEOUT_SECONDS=int(os.getenv("SEARCH_TIMEOUT_SECONDS", "20")),
     SEARCH_CACHE_ENABLED=os.getenv("SEARCH_CACHE_ENABLED", "true").strip().lower()
     == "true",

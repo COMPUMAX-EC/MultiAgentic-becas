@@ -5,6 +5,8 @@ type ScholarshipDetailsProps = {
 };
 
 export function ScholarshipDetails({ result }: ScholarshipDetailsProps) {
+  const sourceUrl = getResultDisplayLink(result);
+
   return (
     <section className="scholarship-details" aria-label="Expanded scholarship details">
       <p className="card-label">Archival record</p>
@@ -51,16 +53,33 @@ export function ScholarshipDetails({ result }: ScholarshipDetailsProps) {
       <DetailList title="Required languages" items={result.required_languages || []} />
       <DetailList title="Fields" items={result.fields || []} />
 
-      <a
-        className="official-link"
-        href={result.source_url}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        Open official source
-      </a>
+      {sourceUrl ? (
+        <a
+          className="official-link"
+          href={sourceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Open official source
+        </a>
+      ) : (
+        <button className="official-link official-link-disabled" type="button" disabled>
+          No link
+        </button>
+      )}
     </section>
   );
+}
+
+function getResultDisplayLink(result: ScholarshipResult) {
+  return (
+    result.display_link ||
+    result.official_link ||
+    result.application_url ||
+    result.source_url ||
+    result.pdf_url ||
+    ""
+  ).trim();
 }
 
 function formatDecision(decision: string) {

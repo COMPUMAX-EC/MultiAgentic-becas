@@ -1,46 +1,36 @@
 # Phase Plan
 
-## Phase 1 - Base project and local CLI
+## Current Development Mode
+
+The original 15 core phases are completed enough for the current prototype.
+
+The project is now in improvement blocks focused on:
+- multilingual profile handling
+- typo/error normalization
+- global search expansion
+- less destructive source validation
+- useful link handling
+- ranking relaxation
+- frontend result limits
+- real pipeline metrics
+
+## Block 1 - Multilingual and Typo-Resistant Profile Understanding
 Status: pending
 
-## Phase 2 - Local Qwen integration
+## Block 2 - Global Search Expansion and Search Limits
 Status: pending
 
-## Phase 3 - Profile Intelligence Layer
+## Block 3 - Source Validation Relaxation and Verified Sources
 Status: pending
 
-## Phase 4 - Query Generation Agent
+## Block 4 - Useful Link and Display Link Handling
 Status: pending
 
-## Phase 5 - Web Search Layer
+## Block 5 - Matching and Ranking Relaxation
 Status: pending
 
-## Phase 6 - Source Intelligence Layer
+## Block 6 - Result Limits and Frontend Display Rules
 Status: pending
 
-## Phase 7 - Page Reading and Cleaning
-Status: pending
-
-## Phase 8 - Scholarship Extraction Agent
-Status: pending
-
-## Phase 9 - Scholarship Knowledge Base
-Status: pending
-
-## Phase 10 - RAG and Retrieval Layer
-Status: pending
-
-## Phase 11 - Eligibility and Matching Layer
-Status: pending
-
-## Phase 12 - Ranking and Recommendation Layer
-Status: pending
-
-## Phase 13 - Refresh and Global Scalability Layer
-Status: pending
-
-## Phase 14 - AMD Cloud / vLLM Compatibility
-Status: pending
-
-## Phase 15 - Hackathon Technical Demo
+## Block 7 - Pipeline Metrics and Final Validation
 Status: pending

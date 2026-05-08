@@ -5,7 +5,7 @@ type ScholarshipRowProps = {
 };
 
 export function ScholarshipRow({ result }: ScholarshipRowProps) {
-  const sourceUrl = (result.display_link || result.source_url).trim();
+  const sourceUrl = getResultDisplayLink(result);
   const hasLink = Boolean(sourceUrl && sourceUrl !== "#");
 
   return (
@@ -27,4 +27,15 @@ export function ScholarshipRow({ result }: ScholarshipRowProps) {
       )}
     </li>
   );
+}
+
+function getResultDisplayLink(result: ScholarshipRowProps["result"]) {
+  return (
+    result.display_link ||
+    result.official_link ||
+    result.application_url ||
+    result.source_url ||
+    result.pdf_url ||
+    ""
+  ).trim();
 }

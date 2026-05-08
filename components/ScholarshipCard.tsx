@@ -11,6 +11,7 @@ type ScholarshipCardProps = {
 export function ScholarshipCard({ result }: ScholarshipCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const topRankingReasons = result.ranking_reasons.slice(0, 3);
+  const sourceUrl = getResultDisplayLink(result);
 
   return (
     <article className="scholarship-card">
@@ -52,14 +53,20 @@ export function ScholarshipCard({ result }: ScholarshipCardProps) {
       <DetailList title="Missing requirements" items={result.missing_requirements} />
       <DetailList title="Risk factors" items={result.risk_factors} />
 
-      <a
-        className="official-link"
-        href={result.source_url}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        Open official source
-      </a>
+      {sourceUrl ? (
+        <a
+          className="official-link"
+          href={sourceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Open official source
+        </a>
+      ) : (
+        <button className="official-link official-link-disabled" type="button" disabled>
+          No link
+        </button>
+      )}
 
       <button
         className="details-toggle"
@@ -73,6 +80,17 @@ export function ScholarshipCard({ result }: ScholarshipCardProps) {
       {isExpanded ? <ScholarshipDetails result={result} /> : null}
     </article>
   );
+}
+
+function getResultDisplayLink(result: ScholarshipResult) {
+  return (
+    result.display_link ||
+    result.official_link ||
+    result.application_url ||
+    result.source_url ||
+    result.pdf_url ||
+    ""
+  ).trim();
 }
 
 function DetailList({ title, items }: { title: string; items: string[] }) {

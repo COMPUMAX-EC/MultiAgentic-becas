@@ -69,3 +69,40 @@ def has_suspicious_domain(url: str) -> bool:
         return True
 
     return any(term in domain for term in SUSPICIOUS_DOMAIN_TERMS)
+
+
+def normalize_useful_url(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+
+    url = " ".join(value.strip().split())
+    if not url:
+        return ""
+
+    lowered_url = url.casefold()
+    if lowered_url.startswith(("javascript:", "mailto:", "file:", "data:")):
+        return ""
+    if url.startswith(("/", "\\", ".")):
+        return ""
+    if "://" not in url and (url.startswith("www.") or "." in url.split("/", 1)[0]):
+        url = f"https://{url}"
+
+    try:
+        parsed_url = urlsplit(url)
+    except ValueError:
+        return ""
+
+    if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+        return ""
+    if any(character.isspace() for character in parsed_url.netloc):
+        return ""
+
+    return url
+
+
+def first_useful_url(*values: object) -> str:
+    for value in values:
+        useful_url = normalize_useful_url(value)
+        if useful_url:
+            return useful_url
+    return ""

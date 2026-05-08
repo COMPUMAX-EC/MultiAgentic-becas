@@ -20,6 +20,7 @@ from utils.normalizer import (
     normalize_list,
     normalize_text,
 )
+from utils.url_utils import first_useful_url
 
 
 PROMPT_TEMPLATE_PATH = settings.PROJECT_ROOT / "prompts" / "matching.txt"
@@ -60,6 +61,70 @@ PARTIAL_FUNDING_TERMS = (
     "discount",
     "fee waiver",
 )
+FULL_FUNDING_PROFILE_TERMS = (
+    "full",
+    "fully funded",
+    "complete",
+    "completa",
+)
+PARTIAL_FUNDING_PROFILE_TERMS = (
+    "partial",
+    "parcial",
+    "tuition waiver",
+)
+NO_MODALITY_PREFERENCE_TERMS = {
+    "",
+    "any",
+    "no preference",
+    "not specified",
+    "unknown",
+    "no preference specified",
+}
+MODALITY_ALIASES = {
+    "online": "online",
+    "virtual": "online",
+    "remote": "online",
+    "on-campus": "on-campus",
+    "on campus": "on-campus",
+    "presencial": "on-campus",
+    "in person": "on-campus",
+    "hybrid": "hybrid",
+    "hibrida": "hybrid",
+    "híbrida": "hybrid",
+}
+INVALID_SOURCE_TYPES = {
+    "generic_blog",
+    "irrelevant",
+    "spam_or_low_quality",
+    "expired_or_closed",
+}
+OFFICIAL_SOURCE_TYPES = {
+    "university",
+    "institute",
+    "institution",
+    "government",
+    "organization",
+    "foundation",
+    "company",
+    "international_organization",
+    "official_pdf",
+    "official_university",
+    "official_institute",
+    "official_institution",
+    "official_government",
+    "official_organization",
+    "official_foundation",
+    "official_company",
+    "official_announcement",
+}
+VERIFIED_INFORMATIONAL_SOURCE_TYPES = {
+    "verified_news",
+    "verified_newspaper",
+    "verified_magazine",
+    "verified_education_portal",
+    "verified_scholarship_information_source",
+    "trusted_portal",
+}
 KNOWN_LANGUAGE_KEYS = (
     "english",
     "spanish",
@@ -105,6 +170,13 @@ STEM_TERMS = {
     "informatics",
     "mathematics",
 }
+LATIN_AMERICA_TERMS = (
+    "latin america",
+    "latam",
+    "south america",
+    "america latina",
+    "latinoamerica",
+)
 
 
 class MatchingAgent:
@@ -147,7 +219,13 @@ class MatchingAgent:
 
         match_result = build_match_result(
             scholarship_name=scholarship.get("scholarship_name"),
-            source_url=scholarship.get("source_url"),
+            source_url=first_useful_url(
+                scholarship.get("source_url"),
+                scholarship.get("display_link"),
+                scholarship.get("official_link"),
+                scholarship.get("application_url"),
+                scholarship.get("pdf_url"),
+            ),
             compatibility_score=evaluation["compatibility_score"],
             eligibility_decision=evaluation["eligibility_decision"],
             matched_factors=evaluation["matched_factors"],
@@ -162,6 +240,8 @@ class MatchingAgent:
                 "official_link": scholarship.get("official_link"),
                 "application_url": scholarship.get("application_url"),
                 "pdf_url": scholarship.get("pdf_url"),
+                "original_url": scholarship.get("original_url"),
+                "query_used": scholarship.get("query_used"),
                 "source_type": scholarship.get("source_type"),
             }
         )
@@ -182,6 +262,10 @@ class MatchingAgent:
             normalized_profile.get("languages")
         )
         profile_budget = normalized_profile.get("budget")
+        profile_scholarship_type = normalize_text(
+            normalized_profile.get("scholarship_type")
+        )
+        profile_modality = normalize_text(normalized_profile.get("preferred_modality"))
 
         scholarship_country = normalize_country(scholarship.get("country"))
         scholarship_level = self._normalize_level_key(scholarship.get("academic_level"))
@@ -193,7 +277,13 @@ class MatchingAgent:
             scholarship.get("required_languages")
         )
         scholarship_benefits = normalize_list(scholarship.get("benefits"))
+        scholarship_type = normalize_text(scholarship.get("scholarship_type"))
+        scholarship_modality = normalize_text(
+            scholarship.get("modality") or scholarship.get("preferred_modality")
+        )
 
+        traceable_link = self._score_traceable_link(scholarship)
+        source_validity = self._score_source_validity(scholarship.get("source_type"))
         nationality = self._score_nationality(
             profile_nationality, scholarship_nationalities
         )
@@ -204,8 +294,15 @@ class MatchingAgent:
         )
         language = self._score_language(profile_languages, scholarship_languages)
         funding = self._score_funding(profile_budget, scholarship_benefits)
+        scholarship_type_fit = self._score_scholarship_type(
+            profile_scholarship_type,
+            scholarship_type,
+            scholarship_benefits,
+        )
+        modality = self._score_modality(profile_modality, scholarship_modality)
         source_reliability = self._score_source_reliability(
-            scholarship.get("source_reliability_score")
+            scholarship.get("source_reliability_score"),
+            scholarship.get("source_type"),
         )
         deadline = self._score_deadline(
             scholarship.get("deadline"),
@@ -213,32 +310,44 @@ class MatchingAgent:
         )
 
         matched_factors = (
-            nationality["matched"]
+            traceable_link["matched"]
+            + source_validity["matched"]
+            + nationality["matched"]
             + academic["matched"]
             + field["matched"]
             + target_country["matched"]
             + language["matched"]
             + funding["matched"]
+            + scholarship_type_fit["matched"]
+            + modality["matched"]
             + source_reliability["matched"]
             + deadline["matched"]
         )
         missing_requirements = (
-            nationality["missing"]
+            traceable_link["missing"]
+            + source_validity["missing"]
+            + nationality["missing"]
             + academic["missing"]
             + field["missing"]
             + target_country["missing"]
             + language["missing"]
             + funding["missing"]
+            + scholarship_type_fit["missing"]
+            + modality["missing"]
             + source_reliability["missing"]
             + deadline["missing"]
         )
         risk_factors = (
-            nationality["risk"]
+            traceable_link["risk"]
+            + source_validity["risk"]
+            + nationality["risk"]
             + academic["risk"]
             + field["risk"]
             + target_country["risk"]
             + language["risk"]
             + funding["risk"]
+            + scholarship_type_fit["risk"]
+            + modality["risk"]
             + source_reliability["risk"]
             + deadline["risk"]
         )
@@ -250,21 +359,29 @@ class MatchingAgent:
             "target_country_score": target_country["score"],
             "language_score": language["score"],
             "funding_score": funding["score"],
+            "scholarship_type_score": scholarship_type_fit["score"],
+            "modality_score": modality["score"],
             "source_reliability_score": source_reliability["score"],
             "deadline_status_score": deadline["score"],
+            "link_score": traceable_link["score"],
         }
 
         compatibility_score = min(
             100,
             max(
                 0,
-                nationality["score"]
+                traceable_link["score"]
+                + source_validity["score"]
+                + nationality["score"]
                 + academic["score"]
                 + field["score"]
                 + target_country["score"]
                 + language["score"]
                 + funding["score"]
-                + source_reliability["score"],
+                + scholarship_type_fit["score"]
+                + modality["score"]
+                + source_reliability["score"]
+                + deadline["score"],
             ),
         )
 
@@ -280,16 +397,33 @@ class MatchingAgent:
                 target_country,
                 language,
                 funding,
+                scholarship_type_fit,
+                modality,
                 deadline,
             )
         )
-        critical_block = deadline["blocked"]
+        mismatch_count = sum(
+            int(component["mismatch"])
+            for component in (
+                nationality,
+                academic,
+                field,
+                language,
+                modality,
+            )
+        )
+        critical_block = (
+            traceable_link["blocked"]
+            or source_validity["blocked"]
+            or deadline["blocked"]
+        )
 
         eligibility_decision = self._choose_decision(
             compatibility_score=compatibility_score,
             missing_requirements=missing_requirements,
             risk_factors=risk_factors,
             unknown_count=unknown_count,
+            mismatch_count=mismatch_count,
             critical_block=critical_block,
         )
 
@@ -323,18 +457,25 @@ class MatchingAgent:
 
         if not scholarship_nationalities:
             return self._score_result(
-                score=12,
+                score=14,
                 risk=["Eligible nationalities are not clearly specified."],
                 unknown=True,
             )
 
         normalized_options = [item.casefold() for item in scholarship_nationalities]
         nationality_key = profile_nationality.casefold()
+        nationality_text = " ".join(normalized_options)
 
         if any(term in option for option in normalized_options for term in BROAD_NATIONALITY_TERMS):
             return self._score_result(
                 score=20,
                 matched=["Scholarship appears open to international students."],
+            )
+
+        if any(term in nationality_text for term in LATIN_AMERICA_TERMS):
+            return self._score_result(
+                score=18,
+                matched=["Scholarship appears open to Latin American applicants."],
             )
 
         if any(
@@ -348,10 +489,19 @@ class MatchingAgent:
                 matched=[f"Nationality appears eligible for {profile_nationality} applicants."],
             )
 
+        if any(term in nationality_text for term in ("except", "excluding", "not open to")):
+            return self._score_result(
+                score=0,
+                missing=[f"Nationality appears explicitly excluded for {profile_nationality} applicants."],
+                risk=["Nationality eligibility is a confirmed conflict."],
+                mismatch=True,
+            )
+
         return self._score_result(
-            score=8,
-            missing=[f"Nationality may not be eligible for {profile_nationality} applicants."],
-            risk=["Nationality eligibility needs confirmation from the source page."],
+            score=2,
+            missing=[f"Nationality list does not include {profile_nationality} applicants."],
+            risk=["Nationality eligibility appears incompatible unless broader rules apply."],
+            mismatch=True,
         )
 
     def _score_academic_level(
@@ -366,7 +516,7 @@ class MatchingAgent:
 
         if not scholarship_level:
             return self._score_result(
-                score=12,
+                score=14,
                 risk=["Scholarship academic level is not clearly specified."],
                 unknown=True,
             )
@@ -378,9 +528,10 @@ class MatchingAgent:
             )
 
         return self._score_result(
-            score=6,
+            score=3,
             missing=["Academic level does not match the scholarship target level."],
             risk=["Academic level fit should be checked on the source page."],
+            mismatch=True,
         )
 
     def _score_field(
@@ -398,7 +549,7 @@ class MatchingAgent:
 
         if not scholarship_fields:
             return self._score_result(
-                score=12,
+                score=14,
                 risk=["Scholarship field restrictions are not clearly specified."],
                 unknown=True,
             )
@@ -413,14 +564,22 @@ class MatchingAgent:
             score=6,
             missing=["Field of study does not clearly match the scholarship focus."],
             risk=["Scholarship field coverage may be narrower than the user profile."],
+            mismatch=True,
         )
 
     def _score_target_country(
         self, profile_countries: set[str], scholarship_country: str | None
     ) -> dict:
+        if not profile_countries:
+            return self._score_result(
+                score=10,
+                risk=["Target countries are not specified, so country fit is broad."],
+                unknown=True,
+            )
+
         if not scholarship_country:
             return self._score_result(
-                score=9,
+                score=10,
                 risk=["Scholarship destination country is unknown."],
                 unknown=True,
             )
@@ -432,7 +591,7 @@ class MatchingAgent:
             )
 
         return self._score_result(
-            score=4,
+            score=6,
             risk=["Scholarship country is outside the target country preferences."],
         )
 
@@ -441,7 +600,7 @@ class MatchingAgent:
     ) -> dict:
         if not scholarship_languages:
             return self._score_result(
-                score=10,
+                score=12,
                 risk=["Language requirements are not clearly specified."],
                 unknown=True,
             )
@@ -482,10 +641,11 @@ class MatchingAgent:
 
         if missing:
             return self._score_result(
-                score=5,
+                score=7,
                 matched=matched,
                 missing=missing,
                 risk=risk,
+                mismatch=True,
             )
 
         if partial_matches:
@@ -513,7 +673,7 @@ class MatchingAgent:
     def _score_funding(self, profile_budget: object, scholarship_benefits: list[str]) -> dict:
         if not scholarship_benefits:
             return self._score_result(
-                score=3,
+                score=4,
                 risk=["Funding details are limited or unclear."],
                 unknown=True,
             )
@@ -554,11 +714,136 @@ class MatchingAgent:
             unknown=True,
         )
 
-    def _score_source_reliability(self, source_reliability_score: object) -> dict:
+    def _score_scholarship_type(
+        self,
+        profile_scholarship_type: str | None,
+        scholarship_type: str | None,
+        scholarship_benefits: list[str],
+    ) -> dict:
+        if not profile_scholarship_type:
+            return self._score_result(score=0)
+
+        profile_key = profile_scholarship_type.casefold()
+        scholarship_text = " ".join(
+            [scholarship_type or "", *scholarship_benefits]
+        ).casefold()
+        wants_full = any(term in profile_key for term in FULL_FUNDING_PROFILE_TERMS)
+        wants_partial = any(term in profile_key for term in PARTIAL_FUNDING_PROFILE_TERMS)
+
+        if wants_full and any(term in scholarship_text for term in FULL_FUNDING_TERMS):
+            return self._score_result(
+                score=5,
+                matched=["Scholarship type appears to match full-funding intent."],
+            )
+
+        if wants_partial and any(term in scholarship_text for term in PARTIAL_FUNDING_TERMS):
+            return self._score_result(
+                score=5,
+                matched=["Scholarship type appears to match partial-funding intent."],
+            )
+
+        if wants_partial and any(term in scholarship_text for term in FULL_FUNDING_TERMS):
+            return self._score_result(
+                score=5,
+                matched=["Full funding also satisfies partial-funding intent."],
+            )
+
+        if wants_full and any(term in scholarship_text for term in PARTIAL_FUNDING_TERMS):
+            return self._score_result(
+                score=2,
+                risk=["Scholarship may offer only partial funding while the user prefers full funding."],
+            )
+
+        if scholarship_text and "scholarship" in scholarship_text:
+            return self._score_result(
+                score=3,
+                risk=["Scholarship type is present but funding coverage needs confirmation."],
+                unknown=True,
+            )
+
+        return self._score_result(
+            score=3,
+            risk=["Scholarship type or funding coverage is not clearly specified."],
+            unknown=True,
+        )
+
+    def _score_modality(
+        self, profile_modality: str | None, scholarship_modality: str | None
+    ) -> dict:
+        profile_key = self._normalize_modality(profile_modality)
+        if profile_key in NO_MODALITY_PREFERENCE_TERMS:
+            return self._score_result(score=0)
+
+        scholarship_key = self._normalize_modality(scholarship_modality)
+        if scholarship_key in NO_MODALITY_PREFERENCE_TERMS:
+            return self._score_result(
+                score=0,
+                risk=["Modality is not specified and should be confirmed."],
+                unknown=True,
+            )
+
+        if profile_key == scholarship_key:
+            return self._score_result(
+                score=3,
+                matched=["Scholarship modality matches the user's preference."],
+            )
+
+        if {profile_key, scholarship_key} == {"hybrid", "on-campus"}:
+            return self._score_result(
+                score=2,
+                matched=["Scholarship modality is broadly compatible with the user's preference."],
+            )
+
+        return self._score_result(
+            score=0,
+            risk=["Scholarship modality conflicts with the user's stated preference."],
+            mismatch=True,
+        )
+
+    def _score_traceable_link(self, scholarship: dict) -> dict:
+        display_link = first_useful_url(
+            scholarship.get("display_link"),
+            scholarship.get("official_link"),
+            scholarship.get("application_url"),
+            scholarship.get("source_url"),
+            scholarship.get("pdf_url"),
+        )
+        if not display_link:
+            return self._score_result(
+                score=0,
+                missing=["No useful traceable link is available."],
+                risk=["Scholarship cannot be traced to a usable source URL."],
+                blocked=True,
+            )
+        return self._score_result(
+            score=4,
+            matched=["A useful traceable link is available."],
+        )
+
+    def _score_source_validity(self, source_type: object) -> dict:
+        source_key = normalize_text(source_type).casefold() if source_type else ""
+        if source_key in INVALID_SOURCE_TYPES:
+            return self._score_result(
+                score=0,
+                missing=["Source is not acceptable for scholarship evaluation."],
+                risk=["Source validation indicates an invalid or unrelated source."],
+                blocked=True,
+            )
+        return self._score_result(score=0)
+
+    def _score_source_reliability(
+        self, source_reliability_score: object, source_type: object
+    ) -> dict:
         try:
             reliability = int(source_reliability_score)
         except (TypeError, ValueError):
             reliability = 0
+
+        source_key = normalize_text(source_type).casefold() if source_type else ""
+        if reliability <= 0 and source_key in OFFICIAL_SOURCE_TYPES:
+            reliability = 85
+        elif reliability <= 0 and source_key in VERIFIED_INFORMATIONAL_SOURCE_TYPES:
+            reliability = 70
 
         if reliability >= 80:
             return self._score_result(
@@ -631,35 +916,50 @@ class MatchingAgent:
         missing_requirements: list[str],
         risk_factors: list[str],
         unknown_count: int,
+        mismatch_count: int,
         critical_block: bool,
     ) -> str:
         if critical_block:
-            return "not_eligible"
+            return "rejected"
+
+        if mismatch_count >= 2 and compatibility_score < 60:
+            return "mismatch"
+        if any(
+            text in " ".join(missing_requirements).casefold()
+            for text in (
+                "nationality list does not include",
+                "academic level does not match",
+                "field of study does not clearly match",
+            )
+        ):
+            return "mismatch"
+        if mismatch_count >= 1 and compatibility_score < 45:
+            return "mismatch"
 
         if (
-            compatibility_score >= 80
-            and not missing_requirements
-            and not risk_factors
-            and unknown_count == 0
+            compatibility_score >= 85
+            and mismatch_count == 0
+            and unknown_count <= 1
+            and len(missing_requirements) <= 1
         ):
-            return "strong_match"
+            return "confirmed_match"
 
-        if compatibility_score >= 45:
+        if compatibility_score >= 65 and mismatch_count == 0 and unknown_count <= 3:
+            return "likely_match"
+
+        if compatibility_score >= 45 and mismatch_count <= 1:
             return "possible_match"
 
-        if unknown_count >= 4:
+        if unknown_count >= 4 or (risk_factors and compatibility_score >= 30):
             return "insufficient_information"
 
-        if compatibility_score >= 28:
-            return "weak_match"
-
-        return "insufficient_information"
+        return "mismatch"
 
     def _should_use_llm(self, evaluation: dict) -> bool:
         return settings.MATCHING_USE_LLM and (
             evaluation["eligibility_decision"] == "insufficient_information"
             or (
-                evaluation["eligibility_decision"] == "possible_match"
+                evaluation["eligibility_decision"] in {"possible_match", "likely_match"}
                 and evaluation["unknown_count"] >= 2
             )
         )
@@ -762,6 +1062,13 @@ class MatchingAgent:
         comparison_value = normalized_value.casefold()
         return ACADEMIC_LEVEL_ALIASES.get(comparison_value, comparison_value)
 
+    def _normalize_modality(self, value: object) -> str:
+        normalized_value = normalize_text(value)
+        if not normalized_value:
+            return ""
+        comparison_value = normalized_value.casefold()
+        return MODALITY_ALIASES.get(comparison_value, comparison_value)
+
     def _is_stem_related(self, text: str) -> bool:
         return any(term in text for term in STEM_TERMS)
 
@@ -824,17 +1131,21 @@ class MatchingAgent:
         missing_requirements: list[str],
         risk_factors: list[str],
     ) -> str:
-        if eligibility_decision == "strong_match":
+        if eligibility_decision in {"confirmed_match", "strong_match"}:
             return "Profile aligns well with the core eligibility and preference factors."
+        if eligibility_decision == "likely_match":
+            if risk_factors:
+                return f"Profile is a good fit, but {risk_factors[0].rstrip('.').lower()}."
+            return "Profile aligns with the main scholarship signals, with a few details to confirm."
         if eligibility_decision == "possible_match":
             if risk_factors:
                 return f"Overall fit looks promising, but {risk_factors[0].rstrip('.').lower()}."
             return "Profile aligns with several key factors, with some details still needing confirmation."
-        if eligibility_decision == "weak_match":
+        if eligibility_decision in {"mismatch", "weak_match"}:
             if missing_requirements:
                 return f"Fit is limited because {missing_requirements[0].rstrip('.').lower()}."
             return "Fit is uncertain and only a few compatibility signals are present."
-        if eligibility_decision == "not_eligible":
+        if eligibility_decision in {"rejected", "not_eligible"}:
             if missing_requirements:
                 return f"Current information suggests the user is not eligible because {missing_requirements[0].rstrip('.').lower()}."
             return "Current information suggests the scholarship is not a viable option."
@@ -850,6 +1161,7 @@ class MatchingAgent:
         risk: list[str] | None = None,
         blocked: bool = False,
         unknown: bool = False,
+        mismatch: bool = False,
     ) -> dict:
         return {
             "score": max(0, int(score)),
@@ -858,4 +1170,5 @@ class MatchingAgent:
             "risk": risk or [],
             "blocked": blocked,
             "unknown": unknown,
+            "mismatch": mismatch,
         }

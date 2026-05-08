@@ -20,7 +20,16 @@ Future compatibility:
 - vLLM runtime adapter
 - Remote inference provider
 
-Do not build frontend, mobile app, PWA, UI, dashboard, landing page, or visual interface unless explicitly requested.
+Do not build unrelated frontend, mobile app, PWA, dashboard, landing page, or visual interface unless explicitly requested.
+
+A simple web interface is now part of this project.
+Codex may modify web files only when the requested task explicitly involves:
+- profile input
+- PDF upload
+- backend API integration
+- result display
+- progress panel
+- frontend result mapping
 
 The current priority is the search agent core:
 - profile parsing

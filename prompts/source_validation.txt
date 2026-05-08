@@ -2,14 +2,17 @@ Classify this scholarship search result before page reading.
 
 Return JSON only. Do not include markdown, explanations, or extra text.
 Classify source_type, assign reliability_score from 0 to 100, assign relevance_score from 0 to 100, choose decision, and list reasons and risk_flags.
-Allowed source_type values: official_university, official_government, official_organization, trusted_portal, scholarship_database, uncertain_source, blog_or_media, irrelevant, spam_or_low_quality, expired_or_closed.
+Allowed source_type values: university, institute, institution, government, organization, foundation, company, international_organization, official_pdf, verified_news, verified_newspaper, verified_magazine, verified_education_portal, verified_scholarship_information_source, scholarship_database, unknown, generic_blog, irrelevant, spam_or_low_quality, expired_or_closed.
 Allowed decision values: accept, review, reject.
-Prefer official university, government, and recognized organization sources.
-Reject blogs, spam, unrelated content, and obviously expired opportunities.
+Use accept for official or directly authoritative sources such as university, government, institute, institution, organization, foundation, company, international organization, or official PDF pages.
+Use review for verified informational sources such as reputable news, newspapers, magazines, education portals, or scholarship information sources that clearly discuss scholarships but are not direct official application pages.
+Reject only clearly invalid sources: generic blogs with no authority, spam, copied aggregators without traceable verification, unrelated content, malformed URLs, unreadable/empty pages, malicious-looking URLs, or clearly expired/closed opportunities.
+Do not reject only because language, nationality, deadline, budget, modality, benefits, or requirements are missing.
+Use warnings/risk_flags for informational source, unknown deadline, incomplete requirements, and source type uncertainty.
 
 Expected JSON format:
 {
-  "source_type": "official_university",
+  "source_type": "university",
   "reliability_score": 90,
   "relevance_score": 85,
   "decision": "accept",

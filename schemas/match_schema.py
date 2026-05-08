@@ -2,11 +2,16 @@ from __future__ import annotations
 
 
 ALLOWED_ELIGIBILITY_DECISIONS = {
-    "strong_match",
+    "confirmed_match",
+    "likely_match",
     "possible_match",
+    "insufficient_information",
+    "mismatch",
+    "rejected",
+    # Backward-compatible labels from the earlier matcher.
+    "strong_match",
     "weak_match",
     "not_eligible",
-    "insufficient_information",
 }
 
 BREAKDOWN_FIELDS = (
@@ -16,8 +21,11 @@ BREAKDOWN_FIELDS = (
     "target_country_score",
     "language_score",
     "funding_score",
+    "scholarship_type_score",
+    "modality_score",
     "source_reliability_score",
     "deadline_status_score",
+    "link_score",
 )
 
 

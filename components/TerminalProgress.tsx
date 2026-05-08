@@ -488,14 +488,20 @@ function ResultGroup({
           {results.map((result) => (
             <li className="scholarship-row" key={result.id}>
               <span>{result.scholarship_name}</span>
-              <a
-                className="official-link"
-                href={result.source_url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Open
-              </a>
+              {getResultDisplayLink(result) ? (
+                <a
+                  className="official-link"
+                  href={getResultDisplayLink(result)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open
+                </a>
+              ) : (
+                <button className="official-link official-link-disabled" type="button" disabled>
+                  No link
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -504,6 +510,17 @@ function ResultGroup({
       )}
     </section>
   );
+}
+
+function getResultDisplayLink(result: ScholarshipResult) {
+  return (
+    result.display_link ||
+    result.official_link ||
+    result.application_url ||
+    result.source_url ||
+    result.pdf_url ||
+    ""
+  ).trim();
 }
 
 function createSteps(activeIndex: number, fileName: string | null): WorkflowStep[] {

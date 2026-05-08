@@ -8,6 +8,14 @@ from utils.normalizer import (
     normalize_list,
     normalize_text,
 )
+from utils.profile_normalization import (
+    FIELD_ALIASES,
+    MODALITY_ALIASES,
+    SCHOLARSHIP_TYPE_ALIASES,
+    SPECIALIZATION_ALIASES,
+    first_alias_match,
+    normalize_for_detection,
+)
 
 
 class ProfileAgent:
@@ -23,7 +31,10 @@ class ProfileAgent:
             "academic_level": normalize_academic_level(
                 validated_profile["academic_level"]
             ),
-            "field_of_study": normalize_text(validated_profile["field_of_study"]),
+            "field_of_study": self._normalize_alias_text(
+                validated_profile["field_of_study"],
+                FIELD_ALIASES,
+            ),
             "interests": normalize_list(validated_profile["interests"]),
             "target_countries": normalize_list(
                 [
@@ -31,12 +42,17 @@ class ProfileAgent:
                     for country in validated_profile["target_countries"]
                 ]
             ),
-            "scholarship_type": normalize_text(validated_profile["scholarship_type"]),
+            "scholarship_type": self._normalize_alias_text(
+                validated_profile["scholarship_type"],
+                SCHOLARSHIP_TYPE_ALIASES,
+            ),
             "budget": self._normalize_budget(validated_profile["budget"]),
-            "preferred_modality": normalize_text(
-                validated_profile["preferred_modality"]
+            "preferred_modality": self._normalize_alias_text(
+                validated_profile["preferred_modality"],
+                MODALITY_ALIASES,
             ),
         }
+        self._copy_optional_profile_metadata(raw_profile_data, normalized_profile)
 
         return normalized_profile
 
@@ -54,3 +70,39 @@ class ProfileAgent:
             return normalized_budget
 
         return budget
+
+    def _normalize_alias_text(self, value: object, aliases: dict[str, str]) -> str | None:
+        normalized_value = normalize_text(value)
+        if normalized_value is None:
+            return None
+
+        alias_value = first_alias_match(normalize_for_detection(normalized_value), aliases)
+        return alias_value or normalized_value
+
+    def _copy_optional_profile_metadata(
+        self,
+        raw_profile_data: dict,
+        normalized_profile: dict,
+    ) -> None:
+        metadata_fields = (
+            "raw_profile_text",
+            "original_input",
+            "detected_input_language",
+            "normalization_warnings",
+            "inferred_fields",
+            "country_of_origin",
+            "specialization",
+        )
+        for field in metadata_fields:
+            if field not in raw_profile_data:
+                continue
+            value = raw_profile_data[field]
+            if field == "country_of_origin":
+                normalized_profile[field] = normalize_country(value)
+            elif field == "specialization":
+                normalized_profile[field] = self._normalize_alias_text(
+                    value,
+                    SPECIALIZATION_ALIASES,
+                )
+            else:
+                normalized_profile[field] = value

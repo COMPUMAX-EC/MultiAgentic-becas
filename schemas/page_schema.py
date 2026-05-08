@@ -27,9 +27,13 @@ def build_page_result(
 
     return {
         "url": source.get("url", ""),
+        "source_url": source.get("source_url") or source.get("url", ""),
+        "original_url": source.get("original_url") or source.get("url", ""),
         "title": source.get("title", ""),
         "source_type": source.get("source_type", ""),
         "source_decision": source.get("decision", ""),
+        "source_acceptance_status": source.get("acceptance_status", ""),
+        "query_used": source.get("query_used", ""),
         "status": status,
         "raw_text_length": raw_text_length,
         "cleaned_text_length": len(cleaned_text),

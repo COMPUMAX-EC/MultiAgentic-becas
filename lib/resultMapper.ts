@@ -1,5 +1,7 @@
 import {
   ScholarshipPriorityLabel,
+  PipelineMetrics,
+  RejectionSummary,
   ScholarshipResult,
   WorkflowStep,
   WorkflowStepStatus,
@@ -10,6 +12,8 @@ export type ScholarshipResponseMapping = {
   workflowSteps: WorkflowStep[];
   workflowLogs: string[];
   warnings: string[];
+  metrics: PipelineMetrics;
+  rejectionSummary: RejectionSummary;
   isPartialFailure: boolean;
   isUnsupportedShape: boolean;
 };
@@ -22,7 +26,8 @@ export function mapScholarshipResponseDetails(
   payload: unknown,
 ): ScholarshipResponseMapping {
   const records = dedupeScholarshipRecords(findScholarshipRecords(payload));
-  const warnings = collectWarnings(payload);
+  const hasMetrics = isRecord(payload) && isRecord(payload.metrics);
+  const warnings = collectWarnings(payload, hasMetrics);
   const isPartialFailure = detectPartialFailure(payload);
 
   return {
@@ -30,6 +35,7 @@ export function mapScholarshipResponseDetails(
       const item = isRecord(record) ? record : {};
       return {
         id: textValue(item.id) || `backend-scholarship-${index + 1}`,
+        rank: optionalNumberValue(item.rank),
         scholarship_name:
           textValue(item.scholarship_name) ||
           textValue(item.name) ||
@@ -53,31 +59,36 @@ export function mapScholarshipResponseDetails(
         ranking_reasons: listValue(item.ranking_reasons),
         risk_factors: listValue(item.risk_factors),
         missing_requirements: listValue(item.missing_requirements),
-        source_url:
-          textValue(item.source_url) || "",
-        official_link: textValue(item.official_link),
-        application_url: textValue(item.application_url),
-        pdf_url: textValue(item.pdf_url),
-        display_link:
-          textValue(item.display_link) ||
-          textValue(item.official_link) ||
-          textValue(item.application_url) ||
-          textValue(item.source_url) ||
-          textValue(item.pdf_url) ||
-          textValue(item.url) ||
-          textValue(item.link) ||
-          "",
+        source_url: usefulLink(item.source_url, item.url, item.link) || "",
+        official_link: usefulLink(item.official_link),
+        application_url: usefulLink(item.application_url, item.apply_url),
+        pdf_url: usefulLink(item.pdf_url),
+        display_link: usefulLink(
+          item.display_link,
+          item.official_link,
+          item.application_url,
+          item.apply_url,
+          item.source_url,
+          item.pdf_url,
+          item.url,
+          item.link,
+        ),
         benefits: listValue(item.benefits),
         requirements: listValue(item.requirements),
         deadline: textValue(item.deadline),
         eligible_nationalities: listValue(item.eligible_nationalities),
         required_languages: listValue(item.required_languages),
         fields: listValue(item.fields),
+        result_section: resultSectionValue(item.result_section),
       };
     }),
     workflowSteps: findWorkflowSteps(payload),
     workflowLogs: findWorkflowLogs(payload),
     warnings,
+    metrics: metricsValue(isRecord(payload) ? payload.metrics : undefined),
+    rejectionSummary: rejectionSummaryValue(
+      isRecord(payload) ? payload.rejection_summary || payload.rejectionSummary : undefined,
+    ),
     isPartialFailure,
     isUnsupportedShape: isRecord(payload) && !records.length && !hasKnownResultKey(payload),
   };
@@ -184,6 +195,11 @@ function findScholarshipRecords(payload: unknown): unknown[] {
     return [];
   }
 
+  const groupedRecords = findGroupedScholarshipRecords(payload);
+  if (groupedRecords.length) {
+    return groupedRecords;
+  }
+
   const possibleKeys = [
     "top_recommendations",
     "ranked_results",
@@ -212,20 +228,48 @@ function findScholarshipRecords(payload: unknown): unknown[] {
   return [];
 }
 
+function findGroupedScholarshipRecords(payload: Record<string, unknown>): unknown[] {
+  const recommendedRecords = markResultSection(payload.recommended, "recommended");
+  const lessRecommendedRecords = markResultSection(
+    payload.less_recommended || payload.lessRecommended,
+    "less_recommended",
+  );
+
+  return [...recommendedRecords, ...lessRecommendedRecords];
+}
+
+function markResultSection(
+  value: unknown,
+  resultSection: "recommended" | "less_recommended",
+) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(isRecord)
+    .map((record) => ({
+      ...record,
+      result_section: resultSection,
+    }));
+}
+
 function dedupeScholarshipRecords(records: unknown[]) {
   const seen = new Set<string>();
   const uniqueRecords: unknown[] = [];
 
   for (const record of records) {
     const item = isRecord(record) ? record : {};
-    const urlKey =
-      textValue(item.display_link) ||
-      textValue(item.official_link) ||
-      textValue(item.application_url) ||
-      textValue(item.source_url) ||
-      textValue(item.pdf_url) ||
-      textValue(item.url) ||
-      textValue(item.link);
+    const urlKey = usefulLink(
+      item.display_link,
+      item.official_link,
+      item.application_url,
+      item.apply_url,
+      item.source_url,
+      item.pdf_url,
+      item.url,
+      item.link,
+    );
     const nameKey =
       textValue(item.scholarship_name) ||
       textValue(item.name) ||
@@ -251,11 +295,22 @@ function hasKnownResultKey(payload: Record<string, unknown>) {
     "ranked_results",
     "ranked_recommendations",
     "recommendations",
+    "recommended",
+    "less_recommended",
+    "lessRecommended",
     "results",
     "scholarships",
     "matches",
     "data",
   ].some((key) => key in payload);
+}
+
+function resultSectionValue(value: unknown) {
+  const resultSection = textValue(value);
+  if (resultSection === "recommended" || resultSection === "less_recommended") {
+    return resultSection;
+  }
+  return undefined;
 }
 
 function detectPartialFailure(payload: unknown): boolean {
@@ -272,17 +327,23 @@ function detectPartialFailure(payload: unknown): boolean {
   );
 }
 
-function collectWarnings(payload: unknown): string[] {
+function collectWarnings(payload: unknown, hasMetrics: boolean): string[] {
   if (!isRecord(payload)) {
     return [];
   }
 
-  return [
+  const warnings = [
     textValue(payload.message),
     ...listValue(payload.warnings),
     ...listValue(payload.errors),
     textValue(payload.error),
   ].filter(Boolean);
+
+  if (!hasMetrics) {
+    warnings.push("Backend did not return pipeline metrics.");
+  }
+
+  return warnings;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -293,6 +354,56 @@ function textValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function usefulLink(...values: unknown[]) {
+  for (const value of values) {
+    const rawValue = textValue(value);
+    if (!rawValue) {
+      continue;
+    }
+
+    const normalizedValue = rawValue.replace(/\s+/g, " ");
+    const lowerValue = normalizedValue.toLowerCase();
+    if (
+      lowerValue.startsWith("javascript:") ||
+      lowerValue.startsWith("mailto:") ||
+      lowerValue.startsWith("file:") ||
+      lowerValue.startsWith("data:") ||
+      normalizedValue.startsWith("/") ||
+      normalizedValue.startsWith("\\") ||
+      normalizedValue.startsWith(".")
+    ) {
+      continue;
+    }
+
+    const candidate =
+      normalizedValue.includes("://") ||
+      normalizedValue.startsWith("www.") ||
+      normalizedValue.split("/", 1)[0]?.includes(".")
+        ? normalizedValue.includes("://")
+          ? normalizedValue
+          : `https://${normalizedValue}`
+        : "";
+
+    if (!candidate) {
+      continue;
+    }
+
+    try {
+      const parsedUrl = new URL(candidate);
+      if (
+        (parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:") &&
+        parsedUrl.hostname
+      ) {
+        return parsedUrl.toString();
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return "";
+}
+
 function scoreValue(value: unknown) {
   const score = typeof value === "number" ? value : Number(value);
   return Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : 0;
@@ -301,6 +412,49 @@ function scoreValue(value: unknown) {
 function optionalNumberValue(value: unknown) {
   const count = typeof value === "number" ? value : Number(value);
   return Number.isFinite(count) ? count : undefined;
+}
+
+function metricsValue(value: unknown): PipelineMetrics {
+  const item = isRecord(value) ? value : {};
+  return {
+    generated_queries_count: countValue(item.generated_queries_count),
+    sources_found_count: countValue(item.sources_found_count),
+    sources_deduplicated_count: countValue(item.sources_deduplicated_count),
+    sources_accepted_count: countValue(item.sources_accepted_count),
+    sources_accepted_with_warning_count: countValue(
+      item.sources_accepted_with_warning_count,
+    ),
+    sources_rejected_count: countValue(item.sources_rejected_count),
+    pages_read_count: countValue(item.pages_read_count),
+    pages_failed_count: countValue(item.pages_failed_count),
+    scholarships_extracted_count: countValue(item.scholarships_extracted_count),
+    scholarships_with_useful_link_count: countValue(
+      item.scholarships_with_useful_link_count,
+    ),
+    expired_rejected_count: countValue(item.expired_rejected_count),
+    matched_count: countValue(item.matched_count),
+    ranked_count: countValue(item.ranked_count),
+    recommended_count: countValue(item.recommended_count),
+    less_recommended_count: countValue(item.less_recommended_count),
+  };
+}
+
+function rejectionSummaryValue(value: unknown): RejectionSummary {
+  const item = isRecord(value) ? value : {};
+  return {
+    non_scholarship_page: countValue(item.non_scholarship_page),
+    untrusted_source: countValue(item.untrusted_source),
+    expired_or_closed: countValue(item.expired_or_closed),
+    no_useful_link: countValue(item.no_useful_link),
+    duplicate: countValue(item.duplicate),
+    read_failed: countValue(item.read_failed),
+    extraction_failed: countValue(item.extraction_failed),
+  };
+}
+
+function countValue(value: unknown) {
+  const count = optionalNumberValue(value);
+  return typeof count === "number" ? Math.max(0, Math.trunc(count)) : 0;
 }
 
 function listValue(value: unknown) {
@@ -343,19 +497,21 @@ function priorityValue(value: unknown): ScholarshipPriorityLabel {
   if (
     priority === "high_priority" ||
     priority === "medium_priority" ||
+    priority === "possible_match" ||
     priority === "low_priority" ||
     priority === "insufficient_information" ||
-    priority === "not_recommended"
+    priority === "not_recommended" ||
+    priority === "rejected"
   ) {
     return priority;
   }
 
-  if (priority === "strong_match") {
+  if (priority === "confirmed_match" || priority === "likely_match" || priority === "strong_match") {
     return "high_priority";
   }
 
   if (priority === "possible_match") {
-    return "medium_priority";
+    return "possible_match";
   }
 
   if (priority === "weak_match") {
@@ -366,7 +522,7 @@ function priorityValue(value: unknown): ScholarshipPriorityLabel {
     return "insufficient_information";
   }
 
-  if (priority === "not_eligible") {
+  if (priority === "not_eligible" || priority === "mismatch") {
     return "not_recommended";
   }
 

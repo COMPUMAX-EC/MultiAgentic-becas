@@ -1,9 +1,11 @@
 export type ScholarshipPriorityLabel =
   | "high_priority"
   | "medium_priority"
+  | "possible_match"
   | "low_priority"
   | "insufficient_information"
-  | "not_recommended";
+  | "not_recommended"
+  | "rejected";
 
 export type WorkflowStepStatus =
   | "completed"
@@ -21,8 +23,37 @@ export type WorkflowStep = {
   message?: string;
 };
 
+export type PipelineMetrics = {
+  generated_queries_count: number;
+  sources_found_count: number;
+  sources_deduplicated_count: number;
+  sources_accepted_count: number;
+  sources_accepted_with_warning_count: number;
+  sources_rejected_count: number;
+  pages_read_count: number;
+  pages_failed_count: number;
+  scholarships_extracted_count: number;
+  scholarships_with_useful_link_count: number;
+  expired_rejected_count: number;
+  matched_count: number;
+  ranked_count: number;
+  recommended_count: number;
+  less_recommended_count: number;
+};
+
+export type RejectionSummary = {
+  non_scholarship_page: number;
+  untrusted_source: number;
+  expired_or_closed: number;
+  no_useful_link: number;
+  duplicate: number;
+  read_failed: number;
+  extraction_failed: number;
+};
+
 export type ScholarshipResult = {
   id: string;
+  rank?: number;
   scholarship_name: string;
   institution: string;
   country: string;
@@ -45,4 +76,5 @@ export type ScholarshipResult = {
   eligible_nationalities?: string[];
   required_languages?: string[];
   fields?: string[];
+  result_section?: "recommended" | "less_recommended";
 };

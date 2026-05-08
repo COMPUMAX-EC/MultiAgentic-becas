@@ -66,7 +66,32 @@ def normalize_country(value: object) -> str | None:
     normalized_value = normalize_text(value)
     if normalized_value is None:
         return None
-    return " ".join(part.capitalize() for part in normalized_value.split())
+    country_map = {
+        "almania": "Germany",
+        "alemania": "Germany",
+        "germany": "Germany",
+        "canada": "Canada",
+        "colombia": "Colombia",
+        "ecuador": "Ecuador",
+        "usa": "United States",
+        "us": "United States",
+        "united states": "United States",
+        "estados unidos": "United States",
+        "uk": "United Kingdom",
+        "united kingdom": "United Kingdom",
+        "reino unido": "United Kingdom",
+        "espana": "Spain",
+        "spain": "Spain",
+        "francia": "France",
+        "france": "France",
+        "holanda": "Netherlands",
+        "netherlands": "Netherlands",
+    }
+    comparison_value = normalized_value.casefold()
+    return country_map.get(
+        comparison_value,
+        " ".join(part.capitalize() for part in normalized_value.split()),
+    )
 
 
 def normalize_academic_level(value: object) -> str | None:
@@ -75,16 +100,25 @@ def normalize_academic_level(value: object) -> str | None:
         return None
 
     academic_level_map = {
-        "high school": "High School",
-        "associate": "Associate",
-        "bachelor": "Bachelor",
-        "bachelors": "Bachelor",
-        "master": "Master",
-        "masters": "Master",
+        "high school": "high_school",
+        "associate": "associate",
+        "pregrado": "undergraduate",
+        "undergraduate": "undergraduate",
+        "bachelor": "undergraduate",
+        "bachelors": "undergraduate",
+        "licenciatura": "undergraduate",
+        "master": "master",
+        "masters": "master",
+        "maestria": "master",
+        "maestría": "master",
+        "mestrado": "master",
         "mba": "MBA",
-        "phd": "PhD",
-        "doctorate": "PhD",
-        "postdoc": "Postdoc",
+        "phd": "phd",
+        "doctorado": "phd",
+        "doctorate": "phd",
+        "doctoral": "phd",
+        "postdoc": "postdoc",
+        "unspecified": "unspecified",
     }
 
     comparison_value = normalized_value.casefold()
@@ -136,7 +170,26 @@ def _normalize_language_name(value: object) -> str | None:
     normalized_value = normalize_text(value)
     if normalized_value is None:
         return None
-    return " ".join(part.capitalize() for part in normalized_value.split())
+    language_map = {
+        "ingles": "English",
+        "english": "English",
+        "espanol": "Spanish",
+        "español": "Spanish",
+        "spanish": "Spanish",
+        "castellano": "Spanish",
+        "portugues": "Portuguese",
+        "português": "Portuguese",
+        "portuguese": "Portuguese",
+        "frances": "French",
+        "francés": "French",
+        "french": "French",
+        "not specified": "Not specified",
+    }
+    comparison_value = normalized_value.casefold()
+    return language_map.get(
+        comparison_value,
+        " ".join(part.capitalize() for part in normalized_value.split()),
+    )
 
 
 def _normalize_language_level(value: object) -> str | None:

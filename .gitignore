@@ -1,3 +1,4 @@
+# Python cache
 __pycache__/
 *.py[cod]
 *.pyo
@@ -5,11 +6,70 @@ __pycache__/
 .Python
 .pytest_cache/
 .mypy_cache/
+
+# Virtual environments
 .venv/
 venv/
 env/
 ENV/
 
-data/results/*.json
-data/cache/*.json
-node_modules
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Python build/package artifacts
+build/
+dist/
+*.egg-info/
+
+# Local database / generated data
+data/scholarships.db
+data/*.db
+data/results/
+data/cache/
+data/cache/pages/
+
+# Keep folder placeholders if you use them
+!data/results/.gitkeep
+!data/cache/.gitkeep
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.vercel/
+.turbo/
+
+# TypeScript / Next generated files
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+cat >> .gitignore <<'EOF'
+
+# Local environment
+.env.local
+.env.*.local
+
+# Next.js generated files
+.next/
+tsconfig.tsbuildinfo
+
+# Generated cache and results
+data/cache/
+data/cache/pages/
+data/results/
+EOF

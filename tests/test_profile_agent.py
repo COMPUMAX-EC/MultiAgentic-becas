@@ -9,6 +9,7 @@ from utils.normalizer import (
     normalize_language_profiles,
     normalize_list,
 )
+from utils.profile_normalization import infer_profile_from_text
 
 
 class ProfileAgentTests(unittest.TestCase):
@@ -39,7 +40,7 @@ class ProfileAgentTests(unittest.TestCase):
                 {"language": "English", "level": None, "display": "English"},
             ],
         )
-        self.assertEqual(normalized_profile["academic_level"], "Master")
+        self.assertEqual(normalized_profile["academic_level"], "master")
         self.assertEqual(normalized_profile["interests"], ["AI", "Data Science"])
         self.assertEqual(normalized_profile["target_countries"], ["Canada", "Germany"])
         self.assertEqual(normalized_profile["budget"]["currency"], "usd")
@@ -106,6 +107,70 @@ class ProfileAgentTests(unittest.TestCase):
         self.assertEqual(
             normalize_list([" AI ", "", "Data Science", "data science", None]),
             ["AI", "Data Science"],
+        )
+
+    def test_spanish_typo_profile_is_normalized(self) -> None:
+        raw_profile = (
+            "soy colmbiano estudio ing sistemas quiero beca de maestria "
+            "en ia en almania hablo ingles b2"
+        )
+
+        normalized_profile = self.agent.prepare_profile(infer_profile_from_text(raw_profile))
+
+        self.assertEqual(normalized_profile["nationality"], "Colombian")
+        self.assertEqual(normalized_profile["country_of_origin"], "Colombia")
+        self.assertEqual(normalized_profile["academic_level"], "master")
+        self.assertEqual(normalized_profile["field_of_study"], "Computer Science")
+        self.assertEqual(normalized_profile["specialization"], "Artificial Intelligence")
+        self.assertIn("Germany", normalized_profile["target_countries"])
+        self.assertIn(
+            {"language": "English", "level": "B2", "display": "English B2"},
+            normalized_profile["languages"],
+        )
+        self.assertIn(
+            {"language": "Spanish", "level": "Native", "display": "Spanish Native"},
+            normalized_profile["languages"],
+        )
+        self.assertEqual(normalized_profile["raw_profile_text"], raw_profile)
+        self.assertTrue(normalized_profile["normalization_warnings"])
+
+    def test_mixed_language_profile_is_normalized(self) -> None:
+        raw_profile = (
+            "I am from Ecuador, estudio software, quiero beca completa para "
+            "master en AI en Canada, hablo español e ingles C1"
+        )
+
+        normalized_profile = self.agent.prepare_profile(infer_profile_from_text(raw_profile))
+
+        self.assertEqual(normalized_profile["nationality"], "Ecuadorian")
+        self.assertEqual(normalized_profile["country_of_origin"], "Ecuador")
+        self.assertEqual(normalized_profile["academic_level"], "master")
+        self.assertEqual(normalized_profile["specialization"], "Artificial Intelligence")
+        self.assertIn("Canada", normalized_profile["target_countries"])
+        self.assertEqual(normalized_profile["scholarship_type"], "Full funding")
+        self.assertIn(
+            {"language": "Spanish", "level": None, "display": "Spanish"},
+            normalized_profile["languages"],
+        )
+        self.assertIn(
+            {"language": "English", "level": "C1", "display": "English C1"},
+            normalized_profile["languages"],
+        )
+
+    def test_ambiguous_profile_generates_warnings_without_crashing(self) -> None:
+        raw_profile = "quiero una beca para estudiar afuera"
+
+        normalized_profile = self.agent.prepare_profile(infer_profile_from_text(raw_profile))
+
+        self.assertEqual(normalized_profile["academic_level"], "unspecified")
+        self.assertEqual(normalized_profile["field_of_study"], "General studies")
+        self.assertEqual(normalized_profile["target_countries"], ["Global"])
+        self.assertTrue(normalized_profile["normalization_warnings"])
+        self.assertTrue(
+            any(
+                "academic level" in warning.casefold()
+                for warning in normalized_profile["normalization_warnings"]
+            )
         )
 
 

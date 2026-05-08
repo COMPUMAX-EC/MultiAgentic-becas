@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from config.settings import settings
+from utils.url_utils import normalize_useful_url
 
-MAX_GENERATED_QUERIES = 20
+MAX_GENERATED_QUERIES = settings.SEARCH_MAX_QUERIES
 REQUIRED_QUERY_FIELDS = ("query", "target_country", "reason", "priority")
 REQUIRED_RESULT_FIELDS = (
     "title",
@@ -9,6 +11,7 @@ REQUIRED_RESULT_FIELDS = (
     "snippet",
     "source",
     "query",
+    "query_used",
     "target_country",
     "priority",
 )
@@ -22,10 +25,14 @@ class SearchResultValidationError(ValueError):
     pass
 
 
-def validate_generated_queries(raw_queries: object) -> list[dict]:
+def validate_generated_queries(
+    raw_queries: object,
+    max_queries: int | None = None,
+) -> list[dict]:
     if not isinstance(raw_queries, list):
         raise SearchQueryValidationError("Generated queries must be a list.")
 
+    query_limit = max_queries or settings.SEARCH_MAX_QUERIES
     cleaned_queries: list[dict] = []
     seen_queries: set[str] = set()
 
@@ -57,11 +64,11 @@ def validate_generated_queries(raw_queries: object) -> list[dict]:
                 "query": query,
                 "target_country": target_country,
                 "reason": reason,
-                "priority": priority,
+                "priority": len(cleaned_queries) + 1,
             }
         )
 
-        if len(cleaned_queries) == MAX_GENERATED_QUERIES:
+        if len(cleaned_queries) == query_limit:
             break
 
     if not cleaned_queries:
@@ -95,10 +102,11 @@ def validate_search_results(raw_results: object) -> list[dict]:
             continue
 
         title = _clean_text(raw_result.get("title"))
-        url = _clean_text(raw_result.get("url"))
+        url = normalize_useful_url(raw_result.get("url"))
         snippet = _clean_text(raw_result.get("snippet"))
         source = _clean_text(raw_result.get("source"))
         query = _clean_text(raw_result.get("query"))
+        query_used = _clean_text(raw_result.get("query_used")) or query
         target_country = _clean_text(raw_result.get("target_country"))
         priority = _clean_priority(raw_result.get("priority"))
 
@@ -111,12 +119,25 @@ def validate_search_results(raw_results: object) -> list[dict]:
             {
                 "title": title,
                 "url": url,
+                "source_url": url,
+                "original_url": normalize_useful_url(raw_result.get("original_url")) or url,
                 "snippet": snippet,
                 "source": source,
                 "query": query,
+                "query_used": query_used,
                 "target_country": target_country,
                 "priority": priority,
+                **_optional_search_metadata(raw_result),
             }
         )
 
     return cleaned_results
+
+
+def _optional_search_metadata(raw_result: dict) -> dict:
+    metadata: dict[str, str] = {}
+    for field in ("canonical_url", "source_domain", "source_type"):
+        value = _clean_text(raw_result.get(field))
+        if value:
+            metadata[field] = value
+    return metadata

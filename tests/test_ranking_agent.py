@@ -12,14 +12,17 @@ class RankingAgentTests(unittest.TestCase):
         self,
         name: str = "Example Scholarship",
         compatibility_score: int = 80,
-        eligibility_decision: str = "possible_match",
+        eligibility_decision: str = "likely_match",
         risk_factors: list[str] | None = None,
         missing_requirements: list[str] | None = None,
         source_reliability_score: int = 5,
+        source_type: str = "university",
     ) -> dict:
         return {
             "scholarship_name": name,
             "source_url": f"https://example.edu/{name.lower().replace(' ', '-')}",
+            "display_link": f"https://example.edu/{name.lower().replace(' ', '-')}",
+            "source_type": source_type,
             "compatibility_score": compatibility_score,
             "eligibility_decision": eligibility_decision,
             "matched_factors": ["Field and country align."],
@@ -43,7 +46,7 @@ class RankingAgentTests(unittest.TestCase):
             [
                 self.build_match(
                     compatibility_score=85,
-                    eligibility_decision="strong_match",
+                    eligibility_decision="confirmed_match",
                 )
             ]
         )[0]
@@ -63,6 +66,19 @@ class RankingAgentTests(unittest.TestCase):
         )[0]
 
         self.assertEqual(result["priority_label"], "not_recommended")
+
+    def test_rejected_becomes_rejected_priority(self) -> None:
+        result = RankingAgent().rank_recommendations(
+            [
+                self.build_match(
+                    compatibility_score=85,
+                    eligibility_decision="rejected",
+                    missing_requirements=["No useful traceable link is available."],
+                )
+            ]
+        )[0]
+
+        self.assertEqual(result["priority_label"], "rejected")
 
     def test_weak_match_receives_penalty(self) -> None:
         possible = RankingAgent().rank_recommendations(
@@ -156,6 +172,103 @@ class RankingAgentTests(unittest.TestCase):
             results = RankingAgent().rank_recommendations(matches)
 
         self.assertEqual(len(results), 2)
+
+    def test_incomplete_compatible_scholarship_can_remain_possible(self) -> None:
+        result = RankingAgent().rank_recommendations(
+            [
+                self.build_match(
+                    compatibility_score=58,
+                    eligibility_decision="possible_match",
+                    risk_factors=[
+                        "Deadline is unknown and needs confirmation.",
+                        "Language requirements are not clearly specified.",
+                    ],
+                    missing_requirements=[],
+                )
+            ]
+        )[0]
+
+        self.assertIn(result["priority_label"], {"medium_priority", "possible_match", "low_priority"})
+        self.assertNotEqual(result["priority_label"], "not_recommended")
+
+    def test_unknown_deadline_is_small_penalty_only(self) -> None:
+        result = RankingAgent().rank_recommendations(
+            [
+                self.build_match(
+                    compatibility_score=70,
+                    eligibility_decision="likely_match",
+                    risk_factors=["Deadline is unknown and needs confirmation."],
+                )
+            ]
+        )[0]
+
+        self.assertGreaterEqual(result["final_score"], 60)
+        self.assertNotEqual(result["priority_label"], "not_recommended")
+
+    def test_missing_nationality_is_not_hard_rejected(self) -> None:
+        result = RankingAgent().rank_recommendations(
+            [
+                self.build_match(
+                    compatibility_score=68,
+                    eligibility_decision="likely_match",
+                    risk_factors=["Eligible nationalities are not clearly specified."],
+                )
+            ]
+        )[0]
+
+        self.assertIn(result["priority_label"], {"high_priority", "medium_priority", "possible_match"})
+
+    def test_explicit_nationality_mismatch_is_not_recommended(self) -> None:
+        result = RankingAgent().rank_recommendations(
+            [
+                self.build_match(
+                    compatibility_score=50,
+                    eligibility_decision="mismatch",
+                    missing_requirements=["Nationality list does not include Colombian applicants."],
+                )
+            ]
+        )[0]
+
+        self.assertEqual(result["priority_label"], "not_recommended")
+
+    def test_verified_informational_source_good_match_is_not_rejected(self) -> None:
+        result = RankingAgent().rank_recommendations(
+            [
+                self.build_match(
+                    compatibility_score=66,
+                    eligibility_decision="likely_match",
+                    source_reliability_score=4,
+                    source_type="verified_news",
+                )
+            ]
+        )[0]
+
+        self.assertIn(result["priority_label"], {"medium_priority", "possible_match"})
+
+    def test_no_useful_link_is_excluded_by_ranking_validation(self) -> None:
+        match = self.build_match(compatibility_score=80, eligibility_decision="likely_match")
+        match["source_url"] = ""
+        match["display_link"] = ""
+
+        agent = RankingAgent()
+        results = agent.rank_recommendations([match])
+
+        self.assertEqual(results, [])
+        self.assertEqual(agent.ranking_errors, [])
+
+    def test_modality_conflict_lowers_priority_without_rejection(self) -> None:
+        result = RankingAgent().rank_recommendations(
+            [
+                self.build_match(
+                    compatibility_score=72,
+                    eligibility_decision="likely_match",
+                    risk_factors=["Scholarship modality conflicts with the user's stated preference."],
+                )
+            ]
+        )[0]
+
+        self.assertNotEqual(result["priority_label"], "rejected")
+        self.assertGreaterEqual(result["final_score"], 45)
 
 
 if __name__ == "__main__":
