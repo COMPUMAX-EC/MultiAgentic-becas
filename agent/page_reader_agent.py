@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import http.client
+import socket
+import urllib.error
+
 from config.settings import settings
 from schemas.page_schema import build_page_result
 from services.cache_service import PageCacheService
@@ -12,7 +16,19 @@ class PageReaderAgent:
         self.cache_service = cache_service or PageCacheService()
 
     def read_pages(self, validated_sources: list[dict]) -> list[dict]:
-        return [self.read_page_source(source) for source in validated_sources]
+        page_results = []
+        for source in validated_sources:
+            try:
+                page_results.append(self.read_page_source(source))
+            except Exception as exc:
+                page_results.append(
+                    build_page_result(
+                        source,
+                        "read_failed",
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+                )
+        return page_results
 
     def read_page_source(self, source: dict) -> dict:
         decision = source.get("decision")
@@ -44,7 +60,15 @@ class PageReaderAgent:
 
         try:
             raw_content = read_page(url)
-        except PageReadError as exc:
+        except (
+            PageReadError,
+            http.client.RemoteDisconnected,
+            urllib.error.URLError,
+            TimeoutError,
+            ConnectionError,
+            socket.timeout,
+            OSError,
+        ) as exc:
             return build_page_result(source, "read_failed", error=str(exc))
 
         cleaned_text = clean_text(raw_content)

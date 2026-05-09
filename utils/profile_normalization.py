@@ -148,15 +148,10 @@ SCHOLARSHIP_TYPE_ALIASES = {
     "full or partial funding": "Full or partial funding",
     "partial and full funding": "Full or partial funding",
     "full and partial funding": "Full or partial funding",
-    "partial full funding": "Full or partial funding",
-    "full partial funding": "Full or partial funding",
     "complete or partial scholarships": "Full or partial funding",
     "partial or complete scholarships": "Full or partial funding",
-    "complete and partial scholarships": "Full or partial funding",
-    "partial and complete scholarships": "Full or partial funding",
-    "complete partial scholarships": "Full or partial funding",
-    "partial complete scholarships": "Full or partial funding",
-
+    "complete or partial scholarship": "Full or partial funding",
+    "partial or complete scholarship": "Full or partial funding",
     "becas parciales o completas": "Full or partial funding",
     "becas completas o parciales": "Full or partial funding",
     "beca parcial o completa": "Full or partial funding",
@@ -167,30 +162,25 @@ SCHOLARSHIP_TYPE_ALIASES = {
     "beca completa y parcial": "Full or partial funding",
     "financiamiento parcial o completo": "Full or partial funding",
     "financiamiento completo o parcial": "Full or partial funding",
-    "financiamiento parcial y completo": "Full or partial funding",
-    "financiamiento completo y parcial": "Full or partial funding",
     "financiacion parcial o completa": "Full or partial funding",
     "financiacion completa o parcial": "Full or partial funding",
-    "financiacion parcial y completa": "Full or partial funding",
-    "financiacion completa y parcial": "Full or partial funding",
-
     "beca completa": "Full funding",
+    "becas completas": "Full funding",
     "financiacion completa": "Full funding",
+    "financiamiento completo": "Full funding",
     "fully funded": "Full funding",
     "full funding": "Full funding",
     "full scholarship": "Full funding",
-
+    "full scholarships": "Full funding",
     "beca parcial": "Partial funding",
+    "becas parciales": "Partial funding",
     "financiacion parcial": "Partial funding",
+    "financiamiento parcial": "Partial funding",
     "partial funding": "Partial funding",
     "partial scholarship": "Partial funding",
+    "partial scholarships": "Partial funding",
     "parcial": "Partial funding",
 }
-
-COMBINED_SCHOLARSHIP_TYPE_PATTERNS = (
-    r"\b(?:partial|full|complete)\s+(?:or|and)?\s*(?:partial|full|complete)\s+(?:scholarships?|funding)\b",
-    r"\b(?:becas?|financiamiento|financiacion)\s+(?:parcial(?:es)?|complet[ao]s?)\s+(?:o|y)\s+(?:parcial(?:es)?|complet[ao]s?)\b",
-)
 
 LANGUAGE_ALIASES = {
     "ingles": "English",
@@ -236,7 +226,7 @@ def infer_profile_from_text(raw_profile_text: str, scholarship_goal: str = "") -
     academic_level = first_alias_match(normalized_text, ACADEMIC_LEVEL_ALIASES)
     field_of_study = first_alias_match(normalized_text, FIELD_ALIASES)
     specialization = first_alias_match(normalized_text, SPECIALIZATION_ALIASES)
-    scholarship_type = detect_scholarship_type(normalized_text)
+    scholarship_type = first_alias_match(normalized_text, SCHOLARSHIP_TYPE_ALIASES)
     languages = infer_languages(normalized_text, detected_language)
     inferred_native_language = native_language_for_origin(origin_country, detected_language)
     if inferred_native_language:
@@ -536,13 +526,6 @@ def normalize_budget_amount(value: str) -> int | None:
     except (TypeError, ValueError):
         return None
     return amount if amount >= 0 else None
-
-
-def detect_scholarship_type(normalized_text: str) -> str | None:
-    for pattern in COMBINED_SCHOLARSHIP_TYPE_PATTERNS:
-        if re.search(pattern, normalized_text):
-            return "Full or partial funding"
-    return first_alias_match(normalized_text, SCHOLARSHIP_TYPE_ALIASES)
 
 
 def normalize_language_level(value: str) -> str:

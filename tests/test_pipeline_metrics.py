@@ -77,6 +77,29 @@ class FakePageReaderAgent:
         ]
 
 
+class FakeAllFailPageReaderAgent:
+    def read_pages(self, accepted_sources: list[dict]) -> list[dict]:
+        return [
+            {
+                "url": source.get("url"),
+                "source_url": source.get("source_url") or source.get("url"),
+                "title": source.get("title"),
+                "status": "read_failed",
+                "read_status": "read_failed",
+                "read_error": "Remote end closed connection without response",
+                "cleaned_text": "",
+            }
+            for source in accepted_sources
+        ]
+
+
+class UnexpectedExtractionAgent:
+    extraction_errors = []
+
+    def extract_scholarships(self, page_results: list[dict]) -> list[dict]:
+        raise AssertionError("Extraction should not run when all pages fail.")
+
+
 class FakeExtractionAgent:
     extraction_errors = [{"url": "https://news.example.com/call", "error": "Read failed"}]
 
@@ -284,12 +307,61 @@ class PipelineMetricsTests(unittest.TestCase):
         for result in [*response["recommended"], *response["less_recommended"]]:
             self.assertTrue(result["display_link"])
 
+    def test_all_page_reads_fail_returns_clear_failed_payload_with_metrics(self) -> None:
+        payload = self._run_all_page_reads_fail_pipeline()
+        metrics = payload["metrics"]
+        rejection_summary = payload["rejection_summary"]
+        steps = {step["step_name"]: step for step in payload["workflow_steps"]}
+
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(
+            payload["message"],
+            "No readable scholarship pages were available after page reading.",
+        )
+        self.assertEqual(metrics["pages_read_count"], 0)
+        self.assertEqual(metrics["pages_failed_count"], 2)
+        self.assertEqual(rejection_summary["read_failed"], 2)
+        self.assertEqual(steps["Reading scholarship pages"]["status"], "failed")
+        self.assertIn(
+            "No readable scholarship pages",
+            steps["Reading scholarship pages"]["message"],
+        )
+        self.assertEqual(metrics["generated_queries_count"], 2)
+        self.assertEqual(metrics["sources_accepted_count"], 1)
+        self.assertEqual(metrics["sources_accepted_with_warning_count"], 1)
+
     def _run_fake_pipeline(self) -> dict:
         with patch("api.server.QUERY_AGENT", FakeQueryAgent()), patch(
             "api.server.SEARCH_AGENT", FakeSearchAgent()
         ), patch("api.server.SOURCE_VALIDATOR_AGENT", FakeSourceValidatorAgent()), patch(
             "api.server.PAGE_READER_AGENT", FakePageReaderAgent()
         ), patch("api.server.EXTRACTION_AGENT", FakeExtractionAgent()), patch(
+            "api.server.run_matching", fake_run_matching
+        ), patch(
+            "api.server.run_ranking", fake_run_ranking
+        ):
+            workflow_steps = [
+                {
+                    "step_name": "Reading profile input",
+                    "status": "completed",
+                    "count": 1,
+                    "message": "Profile input received.",
+                },
+                {
+                    "step_name": "Normalizing profile",
+                    "status": "completed",
+                    "count": 1,
+                    "message": "Profile input received and normalized.",
+                },
+            ]
+            return run_live_search_pipeline({"academic_level": "master"}, workflow_steps)
+
+    def _run_all_page_reads_fail_pipeline(self) -> dict:
+        with patch("api.server.QUERY_AGENT", FakeQueryAgent()), patch(
+            "api.server.SEARCH_AGENT", FakeSearchAgent()
+        ), patch("api.server.SOURCE_VALIDATOR_AGENT", FakeSourceValidatorAgent()), patch(
+            "api.server.PAGE_READER_AGENT", FakeAllFailPageReaderAgent()
+        ), patch("api.server.EXTRACTION_AGENT", UnexpectedExtractionAgent()), patch(
             "api.server.run_matching", fake_run_matching
         ), patch(
             "api.server.run_ranking", fake_run_ranking

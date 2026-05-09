@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+import http.client
 import urllib.error
 
 from agent.page_reader_agent import PageReaderAgent
@@ -130,6 +131,71 @@ class PageReaderTests(unittest.TestCase):
         self.assertEqual(result["read_status"], "read_failed")
         self.assertEqual(result["read_error"], "timeout")
         self.assertEqual(result["source_url"], source["source_url"])
+
+    @patch("agent.page_reader_agent.read_page")
+    def test_remote_disconnected_returns_read_failed_result(
+        self,
+        mock_read_page,
+    ) -> None:
+        mock_read_page.side_effect = http.client.RemoteDisconnected(
+            "Remote end closed connection without response"
+        )
+        source = {
+            "title": "Scholarship page",
+            "url": "https://example.edu/disconnect",
+            "source_url": "https://example.edu/disconnect",
+            "decision": "accept",
+            "validation_status": "accepted",
+        }
+
+        result = PageReaderAgent().read_page_source(source)
+
+        self.assertEqual(result["status"], "read_failed")
+        self.assertIn("Remote end closed connection", result["read_error"])
+        self.assertEqual(result["cleaned_text"], "")
+
+    @patch("agent.page_reader_agent.read_page")
+    def test_one_page_failure_does_not_stop_remaining_reads(
+        self,
+        mock_read_page,
+    ) -> None:
+        mock_read_page.side_effect = [
+            "<html>Scholarship one funding</html>",
+            http.client.RemoteDisconnected("Remote end closed connection"),
+            "<html>Scholarship three funding</html>",
+        ]
+        sources = [
+            {
+                "title": "One",
+                "url": "https://example.edu/one",
+                "decision": "accept",
+                "validation_status": "accepted",
+            },
+            {
+                "title": "Two",
+                "url": "https://example.edu/two",
+                "decision": "accept",
+                "validation_status": "accepted",
+            },
+            {
+                "title": "Three",
+                "url": "https://example.edu/three",
+                "decision": "accept",
+                "validation_status": "accepted",
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_service = PageCacheService(cache_dir=Path(temp_dir))
+            results = PageReaderAgent(cache_service=cache_service).read_pages(sources)
+
+        self.assertEqual([result["status"] for result in results], [
+            "read_success",
+            "read_failed",
+            "read_success",
+        ])
+        self.assertEqual(results[1]["source_url"], "https://example.edu/two")
+        self.assertEqual(results[1]["cleaned_text"], "")
 
 
 if __name__ == "__main__":

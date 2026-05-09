@@ -448,17 +448,28 @@ def run_live_search_pipeline(
         metrics["pages_read_count"] = readable_page_count
         metrics["pages_failed_count"] = failed_page_count
         rejection_summary["read_failed"] += failed_page_count
+        page_read_message = (
+            f"Read {readable_page_count} scholarship pages and failed "
+            f"to read {failed_page_count} accepted sources."
+            if readable_page_count
+            else "No readable scholarship pages were available after page reading."
+        )
         workflow_steps.append(
             build_workflow_step(
                 "Reading scholarship pages",
-                "completed",
+                "completed" if readable_page_count else "failed",
                 readable_page_count,
-                (
-                    f"Read {readable_page_count} scholarship pages and failed "
-                    f"to read {failed_page_count} accepted sources."
-                ),
+                page_read_message,
             )
         )
+        if readable_page_count == 0:
+            return build_no_readable_pages_payload(
+                workflow_steps,
+                page_read_message,
+                errors,
+                metrics,
+                rejection_summary,
+            )
     except Exception as exc:
         return build_failed_pipeline_payload(
             workflow_steps,
@@ -659,6 +670,36 @@ def build_failed_pipeline_payload(
         "metrics": build_empty_metrics(),
         "rejection_summary": build_empty_rejection_summary(),
         "workflow_counts": build_empty_metrics(),
+    }
+
+
+def build_no_readable_pages_payload(
+    workflow_steps: list[dict],
+    message: str,
+    errors: list[str],
+    metrics: dict,
+    rejection_summary: dict,
+) -> dict:
+    errors.append(message)
+    workflow_steps.append(
+        build_workflow_step(
+            "Preparing final results",
+            "failed",
+            0,
+            "Live search stopped because no accepted source pages could be read.",
+        )
+    )
+    return {
+        "status": "failed",
+        "message": message,
+        "workflow_steps": ensure_required_workflow_steps(workflow_steps),
+        "ranked_results": [],
+        "recommended": [],
+        "less_recommended": [],
+        "errors": dedupe_text_values(errors),
+        "metrics": metrics,
+        "rejection_summary": rejection_summary,
+        "workflow_counts": metrics,
     }
 
 
