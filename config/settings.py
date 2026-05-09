@@ -22,6 +22,10 @@ class Settings:
     REMOTE_LLM_MODEL: str
     REMOTE_LLM_TIMEOUT_SECONDS: int
     REMOTE_LLM_ENDPOINT_TYPE: str
+    GCP_VM_BASE_URL: str
+    GCP_VM_API_KEY: str
+    GCP_VM_MODEL: str
+    GCP_VM_TIMEOUT_SECONDS: int
     SEARCH_PROVIDER: str
     SEARCH_MAX_QUERIES: int
     SEARCH_MAX_RESULTS_PER_QUERY: int
@@ -63,6 +67,8 @@ class Settings:
     RANKING_MIN_FINAL_SCORE: int
     RANKING_MAX_RESULTS: int
     RANKING_SCORE_VERSION: str
+    SEMANTIC_SEARCH_ENABLED: bool
+    SEMANTIC_SEARCH_TOP_K: int
     DEFAULT_OUTPUT_FORMAT: str = "json"
 
 
@@ -87,6 +93,10 @@ settings = Settings(
     REMOTE_LLM_ENDPOINT_TYPE=os.getenv(
         "REMOTE_LLM_ENDPOINT_TYPE", "openai_compatible"
     ).strip().lower(),
+    GCP_VM_BASE_URL=os.getenv("GCP_VM_BASE_URL", "").strip(),
+    GCP_VM_API_KEY=os.getenv("GCP_VM_API_KEY", "").strip(),
+    GCP_VM_MODEL=os.getenv("GCP_VM_MODEL", "qwen2.5:3b").strip(),
+    GCP_VM_TIMEOUT_SECONDS=int(os.getenv("GCP_VM_TIMEOUT_SECONDS", "180")),
     SEARCH_PROVIDER=os.getenv("SEARCH_PROVIDER", "duckduckgo"),
     SEARCH_MAX_QUERIES=int(
         os.getenv("SEARCH_MAX_QUERIES", os.getenv("MAX_SEARCH_QUERIES", "30"))
@@ -171,4 +181,6 @@ settings = Settings(
     RANKING_MIN_FINAL_SCORE=int(os.getenv("RANKING_MIN_FINAL_SCORE", "50")),
     RANKING_MAX_RESULTS=int(os.getenv("RANKING_MAX_RESULTS", "10")),
     RANKING_SCORE_VERSION=os.getenv("RANKING_SCORE_VERSION", "v1").strip(),
+    SEMANTIC_SEARCH_ENABLED=os.getenv("SEMANTIC_SEARCH_ENABLED", "true").strip().lower() == "true",
+    SEMANTIC_SEARCH_TOP_K=int(os.getenv("SEMANTIC_SEARCH_TOP_K", "20")),
 )
