@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import unittest
-from types import SimpleNamespace
-from unittest.mock import patch
+from tempfile import TemporaryDirectory
 
 from agent.ranking_agent import RankingAgent
+from database.repository import list_ranking_records
 
 
 class RankingAgentTests(unittest.TestCase):
@@ -23,7 +23,15 @@ class RankingAgentTests(unittest.TestCase):
             "source_url": f"https://example.edu/{name.lower().replace(' ', '-')}",
             "display_link": f"https://example.edu/{name.lower().replace(' ', '-')}",
             "source_type": source_type,
+            "source_validation_status": "accepted_with_warning"
+            if source_type.startswith("verified_")
+            else "accepted",
             "compatibility_score": compatibility_score,
+            "compatibility_points": 8,
+            "max_possible_points": 10,
+            "matched_profile_fields": ["field_of_study: Computer Science compatible"],
+            "missing_profile_fields": missing_requirements or [],
+            "source_trust_score": 70 if source_type.startswith("verified_") else 100,
             "eligibility_decision": eligibility_decision,
             "matched_factors": ["Field and country align."],
             "missing_requirements": missing_requirements or [],
@@ -157,21 +165,16 @@ class RankingAgentTests(unittest.TestCase):
 
         self.assertEqual([result["rank"] for result in results], [1, 2])
 
-    def test_ranking_max_results_is_respected(self) -> None:
-        fake_settings = SimpleNamespace(
-            RANKING_MAX_RESULTS=2,
-            RANKING_MIN_FINAL_SCORE=50,
-        )
+    def test_ranking_does_not_cap_ranked_results(self) -> None:
         matches = [
             self.build_match("One", compatibility_score=90),
             self.build_match("Two", compatibility_score=80),
             self.build_match("Three", compatibility_score=70),
         ]
 
-        with patch("agent.ranking_agent.settings", fake_settings):
-            results = RankingAgent().rank_recommendations(matches)
+        results = RankingAgent().rank_recommendations(matches)
 
-        self.assertEqual(len(results), 2)
+        self.assertEqual(len(results), 3)
 
     def test_incomplete_compatible_scholarship_can_remain_possible(self) -> None:
         result = RankingAgent().rank_recommendations(
@@ -269,6 +272,30 @@ class RankingAgentTests(unittest.TestCase):
 
         self.assertNotEqual(result["priority_label"], "rejected")
         self.assertGreaterEqual(result["final_score"], 45)
+
+    def test_ranking_fields_are_preserved(self) -> None:
+        result = RankingAgent().rank_recommendations([self.build_match()])[0]
+
+        self.assertEqual(result["compatibility_points"], 8)
+        self.assertEqual(result["max_possible_points"], 10)
+        self.assertEqual(result["source_trust_score"], 100)
+        self.assertEqual(
+            result["matched_profile_fields"],
+            ["field_of_study: Computer Science compatible"],
+        )
+
+    def test_ranking_records_are_persisted_by_profile_signature(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            db_path = f"{temp_dir}/ranking.sqlite3"
+            match = self.build_match("Stored", compatibility_score=88)
+            match["profile_signature"] = "profile-123"
+
+            RankingAgent(db_path=db_path).rank_recommendations([match])
+            records = list_ranking_records("profile-123", db_path=db_path)
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["scholarship_name"], "Stored")
+        self.assertEqual(records[0]["compatibility_points"], 8)
 
 
 if __name__ == "__main__":

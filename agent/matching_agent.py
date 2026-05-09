@@ -9,6 +9,7 @@ from llm.provider import LLMProviderError, generate_text
 from schemas.match_schema import (
     ALLOWED_ELIGIBILITY_DECISIONS,
     MatchValidationError,
+    attach_point_fields,
     build_match_result,
 )
 from tools.date_validator import has_obvious_expired_signal
@@ -96,6 +97,10 @@ INVALID_SOURCE_TYPES = {
     "generic_blog",
     "irrelevant",
     "spam_or_low_quality",
+    "spam",
+    "copied_aggregator",
+    "unknown_unverified",
+    "non_scholarship_page",
     "expired_or_closed",
 }
 OFFICIAL_SOURCE_TYPES = {
@@ -103,9 +108,13 @@ OFFICIAL_SOURCE_TYPES = {
     "institute",
     "institution",
     "government",
+    "embassy",
     "organization",
     "foundation",
+    "recognized_foundation",
     "company",
+    "official_company",
+    "professional_association",
     "international_organization",
     "official_pdf",
     "official_university",
@@ -234,6 +243,7 @@ class MatchingAgent:
             score_breakdown=evaluation["score_breakdown"],
             recommendation_reason=evaluation["recommendation_reason"],
         )
+        match_result = attach_point_fields(match_result, evaluation)
         match_result.update(
             {
                 "display_link": scholarship.get("display_link"),
@@ -243,11 +253,519 @@ class MatchingAgent:
                 "original_url": scholarship.get("original_url"),
                 "query_used": scholarship.get("query_used"),
                 "source_type": scholarship.get("source_type"),
+                "source_validation_status": scholarship.get("source_validation_status")
+                or scholarship.get("validation_status"),
+                "deadline_status": scholarship.get("deadline_status"),
+                "extraction_confidence": scholarship.get("extraction_confidence"),
+                "profile_signature": self._profile_signature(normalized_profile),
+                "institution": scholarship.get("institution"),
+                "country": scholarship.get("country"),
+                "academic_level": scholarship.get("academic_level"),
+                "eligible_nationalities": scholarship.get("eligible_nationalities"),
+                "required_languages": scholarship.get("required_languages"),
+                "fields": scholarship.get("fields"),
+                "benefits": scholarship.get("benefits"),
+                "deadline": scholarship.get("deadline"),
+                "requirements": scholarship.get("requirements"),
             }
         )
         return match_result
 
     def _evaluate_deterministically(
+        self, normalized_profile: dict, scholarship: dict
+    ) -> dict:
+        return self._evaluate_point_compatibility(normalized_profile, scholarship)
+
+    def _evaluate_point_compatibility(
+        self, normalized_profile: dict, scholarship: dict
+    ) -> dict:
+        intent = normalized_profile.get("search_intent")
+        profile = intent if isinstance(intent, dict) else normalized_profile
+
+        compatibility_points = 0
+        max_possible_points = 0
+        matched_profile_fields: list[str] = []
+        missing_profile_fields: list[str] = []
+        risk_factors: list[str] = []
+        blocked = False
+        major_mismatch = False
+
+        source_type = normalize_text(scholarship.get("source_type")) or ""
+        source_validation_status = normalize_text(
+            scholarship.get("source_validation_status")
+        ) or normalize_text(scholarship.get("validation_status")) or normalize_text(
+            scholarship.get("source_acceptance_status")
+        ) or ""
+        if source_type.casefold() in INVALID_SOURCE_TYPES or source_validation_status.casefold() == "rejected":
+            blocked = True
+            risk_factors.append("Source is rejected or untrusted.")
+
+        if self._is_closed_or_expired(scholarship):
+            blocked = True
+            risk_factors.append("Scholarship is expired or closed.")
+
+        display_link = first_useful_url(
+            scholarship.get("display_link"),
+            scholarship.get("official_link"),
+            scholarship.get("application_url"),
+            scholarship.get("source_url"),
+            scholarship.get("pdf_url"),
+        )
+        if not display_link:
+            blocked = True
+            risk_factors.append("No useful traceable display_link is available.")
+
+        profile_country = normalize_country(
+            profile.get("country_or_nationality")
+            or profile.get("country_of_origin")
+            or profile.get("nationality")
+        )
+        if profile_country:
+            max_possible_points += 1
+            nationality_result = self._point_nationality(
+                profile_country,
+                normalize_list(scholarship.get("eligible_nationalities")),
+            )
+            if nationality_result == "match":
+                compatibility_points += 1
+                matched_profile_fields.append(
+                    f"nationality: {profile_country} compatible"
+                )
+            elif nationality_result == "mismatch":
+                major_mismatch = True
+                missing_profile_fields.append(
+                    f"nationality: {profile_country} not eligible"
+                )
+                risk_factors.append("Nationality eligibility is a confirmed mismatch.")
+            else:
+                missing_profile_fields.append("nationality: eligibility not specified")
+                risk_factors.append("Nationality eligibility is not specified.")
+
+        profile_languages = normalize_language_entries(profile.get("languages"))
+        if profile_languages:
+            max_possible_points += 1
+            language_result = self._point_language(
+                profile_languages,
+                normalize_language_entries(scholarship.get("required_languages")),
+            )
+            if language_result == "match":
+                compatibility_points += 1
+                matched_profile_fields.append(
+                    f"language: {', '.join(profile_languages)} compatible"
+                )
+            elif language_result == "mismatch":
+                missing_profile_fields.append("language: requirement may not match")
+                risk_factors.append("Language requirement may conflict with the profile.")
+            else:
+                missing_profile_fields.append("language: requirement not specified")
+                risk_factors.append("Language requirements are not specified.")
+
+        profile_level = self._normalize_level_key(profile.get("academic_level"))
+        if profile_level:
+            max_possible_points += 1
+            scholarship_level = self._normalize_level_key(scholarship.get("academic_level"))
+            if not scholarship_level:
+                missing_profile_fields.append("academic_level: scholarship level unknown")
+                risk_factors.append("Academic level is not specified by the scholarship.")
+            elif profile_level == scholarship_level:
+                compatibility_points += 1
+                matched_profile_fields.append(f"academic_level: {profile_level} compatible")
+            else:
+                major_mismatch = True
+                missing_profile_fields.append(
+                    f"academic_level: expected {profile_level}, found {scholarship_level}"
+                )
+                risk_factors.append("Academic level is a confirmed mismatch.")
+
+        profile_field = normalize_text(profile.get("field_of_study"))
+        scholarship_fields = normalize_list(scholarship.get("fields"))
+        if profile_field:
+            max_possible_points += 1
+            if not scholarship_fields:
+                missing_profile_fields.append("field_of_study: scholarship field unknown")
+                risk_factors.append("Scholarship field restrictions are not specified.")
+            elif self._field_matches(
+                profile_field,
+                normalize_list(profile.get("interests")),
+                scholarship_fields,
+            ):
+                compatibility_points += 1
+                matched_profile_fields.append(
+                    f"field_of_study: {profile_field} compatible"
+                )
+            else:
+                missing_profile_fields.append(
+                    f"field_of_study: {profile_field} not confirmed"
+                )
+                risk_factors.append("Field fit is uncertain or weak.")
+
+        profile_specialization = normalize_text(profile.get("specialization"))
+        interests = normalize_list(profile.get("interests"))
+        specialization_terms = [
+            term for term in [profile_specialization, *interests] if term
+        ]
+        if specialization_terms:
+            max_possible_points += 1
+            scholarship_text = self._scholarship_text(scholarship)
+            if any(term.casefold() in scholarship_text for term in specialization_terms):
+                compatibility_points += 1
+                matched_profile_fields.append(
+                    f"specialization/interests: {specialization_terms[0]} compatible"
+                )
+            else:
+                missing_profile_fields.append("specialization/interests: not confirmed")
+                risk_factors.append("Specialization or interests are not confirmed.")
+
+        target_countries = {
+            country.casefold()
+            for country in normalize_list(profile.get("target_countries"))
+            if country.casefold() not in {"global", "any", "unknown", "not specified"}
+        }
+        if target_countries:
+            max_possible_points += 1
+            scholarship_country = normalize_country(scholarship.get("country"))
+            if not scholarship_country:
+                missing_profile_fields.append("target_country: scholarship country unknown")
+                risk_factors.append("Scholarship destination country is unknown.")
+            elif scholarship_country.casefold() in target_countries:
+                compatibility_points += 1
+                matched_profile_fields.append(
+                    f"target_country: {scholarship_country} compatible"
+                )
+            else:
+                missing_profile_fields.append(
+                    f"target_country: {scholarship_country} outside stated targets"
+                )
+                risk_factors.append("Destination country does not match stated target countries.")
+
+        profile_scholarship_type = normalize_text(profile.get("scholarship_type"))
+        if profile_scholarship_type:
+            max_possible_points += 1
+            type_result = self._point_scholarship_type(profile_scholarship_type, scholarship)
+            if type_result == "match":
+                compatibility_points += 1
+                matched_profile_fields.append(
+                    f"scholarship_type: {profile_scholarship_type} compatible"
+                )
+            elif type_result == "partial_for_full":
+                missing_profile_fields.append("scholarship_type: full funding not confirmed")
+                risk_factors.append(
+                    "Scholarship may offer only partial funding while the user prefers full funding."
+                )
+            else:
+                missing_profile_fields.append("scholarship_type: funding type unknown")
+                risk_factors.append("Scholarship type or funding coverage is unclear.")
+
+        if self._profile_has_budget(profile):
+            max_possible_points += 1
+            budget_result = self._point_budget(profile, scholarship)
+            if budget_result == "match":
+                compatibility_points += 1
+                matched_profile_fields.append("budget/financial_need: compatible")
+            else:
+                missing_profile_fields.append("budget/financial_need: not confirmed")
+                risk_factors.append("Budget or benefits are unclear.")
+
+        profile_modality = self._normalize_modality(profile.get("modality") or profile.get("preferred_modality"))
+        if profile_modality not in NO_MODALITY_PREFERENCE_TERMS:
+            max_possible_points += 1
+            scholarship_modality = self._normalize_modality(
+                scholarship.get("modality") or scholarship.get("preferred_modality")
+            )
+            if scholarship_modality in NO_MODALITY_PREFERENCE_TERMS:
+                missing_profile_fields.append("modality: scholarship modality unknown")
+                risk_factors.append("Modality is not specified and should be confirmed.")
+            elif scholarship_modality == profile_modality:
+                compatibility_points += 1
+                matched_profile_fields.append(f"modality: {profile_modality} compatible")
+            else:
+                missing_profile_fields.append("modality: conflicting modality")
+                risk_factors.append("Scholarship modality conflicts with the user's stated preference.")
+
+        max_possible_points += 1
+        if self._deadline_unknown(scholarship):
+            missing_profile_fields.append("deadline: deadline not verified")
+            risk_factors.append("Deadline could not be verified.")
+        elif not self._is_closed_or_expired(scholarship):
+            compatibility_points += 1
+            matched_profile_fields.append("deadline: active/current or not expired")
+        else:
+            missing_profile_fields.append("deadline: expired or closed")
+
+        max_possible_points += 1
+        source_trust_score = self._source_trust_score(scholarship)
+        if source_trust_score >= 70:
+            compatibility_points += 1
+            matched_profile_fields.append("source: trusted source")
+        elif source_trust_score == 0:
+            missing_profile_fields.append("source: rejected or untrusted")
+        else:
+            missing_profile_fields.append("source: trust not fully confirmed")
+            risk_factors.append("Source trust is limited.")
+        if source_validation_status.casefold() == "accepted_with_warning":
+            risk_factors.append("Source accepted_with_warning.")
+
+        max_possible_points += 1
+        if display_link:
+            compatibility_points += 1
+            matched_profile_fields.append("link: official/application/source link available")
+            if (
+                display_link == first_useful_url(scholarship.get("source_url"))
+                and not first_useful_url(
+                    scholarship.get("official_link"),
+                    scholarship.get("application_url"),
+                )
+            ):
+                risk_factors.append("Application link is not direct; using source_url.")
+        else:
+            missing_profile_fields.append("link: no useful display_link")
+
+        compatibility_score = (
+            int(round((compatibility_points / max_possible_points) * 100))
+            if max_possible_points
+            else 0
+        )
+
+        extraction_confidence = self._safe_int(scholarship.get("extraction_confidence"))
+        if 0 < extraction_confidence < 60:
+            risk_factors.append("Partial extraction confidence.")
+
+        eligibility_decision = self._choose_point_decision(
+            compatibility_score,
+            blocked,
+            major_mismatch,
+            risk_factors,
+            missing_profile_fields,
+        )
+        score_breakdown = {
+            "nationality_score": 1 if any(item.startswith("nationality:") for item in matched_profile_fields) else 0,
+            "academic_level_score": 1 if any(item.startswith("academic_level:") for item in matched_profile_fields) else 0,
+            "field_score": 1 if any(item.startswith("field_of_study:") for item in matched_profile_fields) else 0,
+            "target_country_score": 1 if any(item.startswith("target_country:") for item in matched_profile_fields) else 0,
+            "language_score": 1 if any(item.startswith("language:") for item in matched_profile_fields) else 0,
+            "funding_score": 1 if any(item.startswith("budget/financial_need:") for item in matched_profile_fields) else 0,
+            "scholarship_type_score": 1 if any(item.startswith("scholarship_type:") for item in matched_profile_fields) else 0,
+            "modality_score": 1 if any(item.startswith("modality:") for item in matched_profile_fields) else 0,
+            "source_reliability_score": int(round(source_trust_score / 20)),
+            "deadline_status_score": 1 if any(item.startswith("deadline:") for item in matched_profile_fields) else 0,
+            "link_score": 1 if display_link else 0,
+        }
+
+        return {
+            "compatibility_points": compatibility_points,
+            "max_possible_points": max_possible_points,
+            "compatibility_score": compatibility_score,
+            "source_trust_score": source_trust_score,
+            "eligibility_decision": eligibility_decision,
+            "matched_factors": matched_profile_fields,
+            "matched_profile_fields": matched_profile_fields,
+            "missing_requirements": missing_profile_fields,
+            "missing_profile_fields": missing_profile_fields,
+            "risk_factors": self._dedupe_list(risk_factors),
+            "score_breakdown": score_breakdown,
+            "recommendation_reason": self._build_point_recommendation_reason(
+                eligibility_decision,
+                compatibility_points,
+                max_possible_points,
+                risk_factors,
+            ),
+            "unknown_count": len(missing_profile_fields),
+        }
+
+    def _point_nationality(self, profile_country: str, nationalities: list[str]) -> str:
+        if not nationalities:
+            return "unknown"
+        text = " ".join(nationalities).casefold()
+        profile_key = profile_country.casefold()
+        if profile_key in text:
+            return "match"
+        if any(term in text for term in BROAD_NATIONALITY_TERMS):
+            return "match"
+        if any(term in text for term in LATIN_AMERICA_TERMS) and profile_key in {
+            "colombia",
+            "ecuador",
+            "peru",
+            "mexico",
+            "argentina",
+            "chile",
+            "brazil",
+        }:
+            return "match"
+        if any(term in text for term in ("except", "excluding", "not open to")):
+            return "mismatch"
+        return "mismatch"
+
+    def _point_language(self, profile_languages: list[str], scholarship_languages: list[str]) -> str:
+        if not scholarship_languages:
+            return "unknown"
+        profile_keys = {self._extract_language_key(language) for language in profile_languages}
+        scholarship_keys = {
+            self._extract_language_key(language) for language in scholarship_languages
+        }
+        if profile_keys.intersection(scholarship_keys):
+            return "match"
+        return "mismatch"
+
+    def _point_scholarship_type(self, profile_type: str, scholarship: dict) -> str:
+        profile_key = profile_type.casefold()
+        scholarship_text = self._scholarship_text(scholarship)
+        wants_full = any(term in profile_key for term in FULL_FUNDING_PROFILE_TERMS)
+        wants_partial = any(term in profile_key for term in PARTIAL_FUNDING_PROFILE_TERMS)
+        has_full = any(term in scholarship_text for term in FULL_FUNDING_TERMS)
+        has_partial = any(term in scholarship_text for term in PARTIAL_FUNDING_TERMS)
+        if wants_full and has_full:
+            return "match"
+        if wants_partial and (has_partial or has_full):
+            return "match"
+        if wants_full and has_partial:
+            return "partial_for_full"
+        return "unknown"
+
+    def _point_budget(self, profile: dict, scholarship: dict) -> str:
+        scholarship_text = self._scholarship_text(scholarship)
+        if any(term in scholarship_text for term in FULL_FUNDING_TERMS):
+            return "match"
+        contribution_capacity = self._extract_contribution_capacity(profile.get("budget"))
+        if contribution_capacity and any(term in scholarship_text for term in PARTIAL_FUNDING_TERMS):
+            return "match"
+        return "unknown"
+
+    def _profile_has_budget(self, profile: dict) -> bool:
+        budget = profile.get("budget")
+        if isinstance(budget, dict):
+            return budget.get("max_personal_contribution") not in (None, "")
+        return isinstance(budget, (int, float))
+
+    def _source_trust_score(self, scholarship: dict) -> int:
+        status = normalize_text(scholarship.get("source_validation_status")) or normalize_text(
+            scholarship.get("validation_status")
+        ) or ""
+        source_type = normalize_text(scholarship.get("source_type")) or ""
+        source_key = source_type.casefold()
+        status_key = status.casefold()
+        if status_key == "rejected" or source_key in INVALID_SOURCE_TYPES:
+            return 0
+        if status_key == "accepted_with_warning" or source_key in VERIFIED_INFORMATIONAL_SOURCE_TYPES:
+            return 70
+        if status_key == "accepted":
+            return 100
+        if source_key in OFFICIAL_SOURCE_TYPES:
+            return 100
+        if first_useful_url(scholarship.get("source_url"), scholarship.get("display_link")):
+            return 40
+        return 0
+
+    def _is_closed_or_expired(self, scholarship: dict) -> bool:
+        status_values = " ".join(
+            str(value or "")
+            for value in (
+                scholarship.get("deadline_status"),
+                scholarship.get("application_status"),
+                scholarship.get("deadline"),
+            )
+        ).casefold()
+        if any(term in status_values for term in ("closed", "expired", "deadline passed")):
+            return True
+        deadline = normalize_text(scholarship.get("deadline"))
+        if deadline:
+            try:
+                deadline_date = datetime.fromisoformat(deadline[:10]).date()
+                return deadline_date < datetime.now(timezone.utc).date()
+            except ValueError:
+                pass
+        return has_obvious_expired_signal(status_values, "")
+
+    def _deadline_unknown(self, scholarship: dict) -> bool:
+        return not normalize_text(scholarship.get("deadline")) and normalize_text(
+            scholarship.get("deadline_status")
+        ) in {None, "", "unknown"}
+
+    def _profile_signature(self, normalized_profile: dict) -> str | None:
+        search_signature = normalized_profile.get("search_signature")
+        if isinstance(search_signature, dict):
+            signature_key = normalize_text(search_signature.get("key"))
+            if signature_key:
+                return signature_key
+        intent = normalized_profile.get("search_intent")
+        if isinstance(intent, dict):
+            intent_signature = intent.get("search_signature")
+            if isinstance(intent_signature, dict):
+                signature_key = normalize_text(intent_signature.get("key"))
+                if signature_key:
+                    return signature_key
+            signature_key = normalize_text(intent_signature)
+            if signature_key:
+                return signature_key
+        return normalize_text(normalized_profile.get("profile_signature"))
+
+    def _scholarship_text(self, scholarship: dict) -> str:
+        parts = [
+            scholarship.get("scholarship_name"),
+            scholarship.get("scholarship_type"),
+            scholarship.get("institution"),
+            scholarship.get("country"),
+            scholarship.get("academic_level"),
+            " ".join(normalize_list(scholarship.get("fields"))),
+            " ".join(normalize_list(scholarship.get("benefits"))),
+            " ".join(normalize_list(scholarship.get("requirements"))),
+            " ".join(normalize_list(scholarship.get("evidence_snippets"))),
+        ]
+        return " ".join(str(part or "") for part in parts).casefold()
+
+    def _safe_int(self, value: object) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    def _choose_point_decision(
+        self,
+        compatibility_score: int,
+        blocked: bool,
+        major_mismatch: bool,
+        risk_factors: list[str],
+        missing_profile_fields: list[str],
+    ) -> str:
+        if blocked:
+            return "rejected"
+        if major_mismatch:
+            return "mismatch"
+        if compatibility_score >= 85:
+            return "confirmed_match"
+        if compatibility_score >= 65:
+            return "likely_match"
+        if compatibility_score >= 50:
+            return "possible_match"
+        if missing_profile_fields and compatibility_score >= 35:
+            return "insufficient_information"
+        return "mismatch"
+
+    def _build_point_recommendation_reason(
+        self,
+        eligibility_decision: str,
+        compatibility_points: int,
+        max_possible_points: int,
+        risk_factors: list[str],
+    ) -> str:
+        base = f"Matched {compatibility_points} of {max_possible_points} applicable compatibility points."
+        if eligibility_decision in {"confirmed_match", "likely_match"}:
+            return base
+        if risk_factors:
+            return f"{base} Main caution: {risk_factors[0]}"
+        return base
+
+    def _dedupe_list(self, values: list[str]) -> list[str]:
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            key = value.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(value)
+        return deduped
+
+    def _legacy_evaluate_deterministically(
         self, normalized_profile: dict, scholarship: dict
     ) -> dict:
         profile_nationality = normalize_country(normalized_profile.get("nationality"))

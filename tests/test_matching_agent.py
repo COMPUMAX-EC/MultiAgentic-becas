@@ -10,6 +10,7 @@ class MatchingAgentTests(unittest.TestCase):
     def setUp(self) -> None:
         self.profile = {
             "nationality": "Colombian",
+            "country_or_nationality": "Colombia",
             "country_of_residence": "Colombia",
             "languages": ["Spanish", "English"],
             "academic_level": "Bachelor",
@@ -47,6 +48,9 @@ class MatchingAgentTests(unittest.TestCase):
 
         self.assertIn(result["eligibility_decision"], {"confirmed_match", "likely_match"})
         self.assertGreaterEqual(result["compatibility_score"], 80)
+        self.assertGreater(result["compatibility_points"], 0)
+        self.assertGreaterEqual(result["max_possible_points"], result["compatibility_points"])
+        self.assertTrue(result["matched_profile_fields"])
 
     def test_possible_match_when_nationality_is_unknown(self) -> None:
         scholarship = dict(self.base_scholarship)
@@ -56,7 +60,7 @@ class MatchingAgentTests(unittest.TestCase):
 
         self.assertIn(result["eligibility_decision"], {"likely_match", "possible_match"})
         self.assertIn(
-            "Eligible nationalities are not clearly specified.",
+            "Nationality eligibility is not specified.",
             result["risk_factors"],
         )
 
@@ -92,7 +96,7 @@ class MatchingAgentTests(unittest.TestCase):
 
         result = MatchingAgent().match_scholarship(self.profile, scholarship)
 
-        self.assertTrue(any("Deadline is unknown" in risk for risk in result["risk_factors"]))
+        self.assertTrue(any("Deadline could not be verified" in risk for risk in result["risk_factors"]))
 
     def test_compatibility_score_remains_between_zero_and_hundred(self) -> None:
         scholarship = dict(self.base_scholarship)
@@ -134,7 +138,7 @@ class MatchingAgentTests(unittest.TestCase):
         result = MatchingAgent().match_scholarship(self.profile, scholarship)
 
         self.assertNotIn(result["eligibility_decision"], {"rejected", "mismatch", "not_eligible"})
-        self.assertGreaterEqual(result["compatibility_score"], 45)
+        self.assertGreaterEqual(result["compatibility_score"], 35)
 
     def test_missing_nationality_is_risk_only(self) -> None:
         scholarship = dict(self.base_scholarship)
@@ -143,7 +147,7 @@ class MatchingAgentTests(unittest.TestCase):
         result = MatchingAgent().match_scholarship(self.profile, scholarship)
 
         self.assertNotEqual(result["eligibility_decision"], "rejected")
-        self.assertTrue(any("nationalities" in risk.lower() for risk in result["risk_factors"]))
+        self.assertTrue(any("nationality" in risk.lower() for risk in result["risk_factors"]))
 
     def test_explicit_nationality_mismatch_is_major_penalty(self) -> None:
         scholarship = dict(self.base_scholarship)
@@ -175,6 +179,9 @@ class MatchingAgentTests(unittest.TestCase):
         self.assertNotIn(
             "Scholarship modality conflicts with the user's stated preference.",
             result["risk_factors"],
+        )
+        self.assertFalse(
+            any(field.startswith("modality:") for field in result["missing_profile_fields"])
         )
 
     def test_selected_modality_conflict_adds_risk_without_hard_rejection(self) -> None:

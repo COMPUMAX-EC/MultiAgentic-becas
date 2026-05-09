@@ -11,10 +11,15 @@ class ExtractionAgentTests(unittest.TestCase):
     def setUp(self) -> None:
         self.page_result = {
             "url": "https://example.edu/scholarship",
+            "source_url": "https://example.edu/scholarship",
             "title": "Scholarship page",
             "source_type": "official_university",
             "source_decision": "accept",
+            "validation_status": "accepted",
+            "source_acceptance_status": "accepted",
             "source_reliability_score": 90,
+            "query_family": "university",
+            "source_family": "university",
             "status": "read_success",
             "cleaned_text": "The Example Scholarship supports Computer Science students.",
         }
@@ -79,6 +84,9 @@ class ExtractionAgentTests(unittest.TestCase):
 
         self.assertEqual(scholarships[0]["source_url"], self.page_result["url"])
         self.assertEqual(scholarships[0]["source_type"], "official_university")
+        self.assertEqual(scholarships[0]["source_validation_status"], "accepted")
+        self.assertEqual(scholarships[0]["query_family"], "university")
+        self.assertEqual(scholarships[0]["source_family"], "university")
         self.assertEqual(scholarships[0]["source_reliability_score"], 90)
 
     @patch("agent.extraction_agent.generate_text")
@@ -116,6 +124,102 @@ class ExtractionAgentTests(unittest.TestCase):
         scholarships = ExtractionAgent().extract_scholarships([self.page_result])
 
         self.assertEqual(len(scholarships), 2)
+
+    @patch("agent.extraction_agent.generate_text")
+    def test_llm_source_url_cannot_replace_page_source_url(self, mock_generate_text) -> None:
+        mock_generate_text.return_value = json.dumps(
+            {
+                "scholarships": [
+                    {
+                        "scholarship_name": "Preserved Source Scholarship",
+                        "source_url": "https://invented.example.org/not-used",
+                        "official_link": "https://official.example.edu/scholarship",
+                        "extraction_confidence": 90,
+                        "application_status": "open",
+                    }
+                ]
+            }
+        )
+
+        scholarships = ExtractionAgent().extract_scholarships([self.page_result])
+
+        self.assertEqual(scholarships[0]["source_url"], self.page_result["source_url"])
+        self.assertEqual(
+            scholarships[0]["display_link"],
+            "https://official.example.edu/scholarship",
+        )
+
+    @patch("agent.extraction_agent.generate_text")
+    def test_unknown_deadline_does_not_reject_traceable_scholarship(
+        self,
+        mock_generate_text,
+    ) -> None:
+        mock_generate_text.return_value = json.dumps(
+            {
+                "scholarships": [
+                    {
+                        "scholarship_name": "Unknown Deadline Scholarship",
+                        "deadline": None,
+                        "official_link": "https://official.example.edu/scholarship",
+                        "extraction_confidence": 90,
+                        "application_status": "unknown",
+                    }
+                ]
+            }
+        )
+
+        scholarships = ExtractionAgent().extract_scholarships([self.page_result])
+
+        self.assertEqual(len(scholarships), 1)
+        self.assertIsNone(scholarships[0]["deadline"])
+        self.assertEqual(scholarships[0]["deadline_status"], "unknown")
+        self.assertEqual(
+            scholarships[0]["display_link"],
+            "https://official.example.edu/scholarship",
+        )
+
+    @patch("agent.extraction_agent.generate_text")
+    def test_duplicate_extractions_prefer_official_link(self, mock_generate_text) -> None:
+        mock_generate_text.return_value = json.dumps(
+            {
+                "scholarships": [
+                    {
+                        "scholarship_name": "Duplicate Scholarship",
+                        "source_url": self.page_result["source_url"],
+                        "extraction_confidence": 90,
+                        "application_status": "open",
+                    },
+                    {
+                        "scholarship_name": "Duplicate Scholarship",
+                        "official_link": "https://official.example.edu/duplicate",
+                        "extraction_confidence": 90,
+                        "application_status": "open",
+                    },
+                ]
+            }
+        )
+
+        scholarships = ExtractionAgent().extract_scholarships([self.page_result])
+
+        self.assertEqual(len(scholarships), 1)
+        self.assertEqual(
+            scholarships[0]["display_link"],
+            "https://official.example.edu/duplicate",
+        )
+
+    def test_fallback_extracts_application_and_pdf_links(self) -> None:
+        page_result = dict(self.page_result)
+        page_result["cleaned_text"] = (
+            "Apply now at https://apply.example.edu/form. "
+            "Bases de la convocatoria PDF https://example.edu/call.pdf"
+        )
+
+        scholarship = ExtractionAgent()._build_fallback_scholarship(page_result)
+
+        self.assertIsNotNone(scholarship)
+        self.assertEqual(scholarship["application_url"], "https://apply.example.edu/form")
+        self.assertEqual(scholarship["pdf_url"], "https://example.edu/call.pdf")
+        self.assertEqual(scholarship["display_link"], "https://apply.example.edu/form")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 "use client";
 
+import { ReactNode } from "react";
 import { WorkflowStep } from "../types/scholarship";
 
 const MAX_VISIBLE_LOG_LINES = 200;
@@ -15,29 +16,29 @@ type ProgressPanelProps = {
   logs: ProgressLogLine[];
   isRunning: boolean;
   headline?: string;
+  actions?: ReactNode;
 };
 
 export function ProgressPanel({
   steps,
   logs,
   isRunning,
-  headline = "Global scholarship search",
+  headline = "Progress & quick actions",
+  actions,
 }: ProgressPanelProps) {
   const completedCount = steps.filter((step) => step.status === "completed").length;
   const failedCount = steps.filter((step) => step.status === "failed").length;
-  const activeStep = steps.find((step) => step.status === "active");
+  const activeStep = steps.find(
+    (step) => step.status === "active" || step.status === "running",
+  );
   const visibleLogs = logs.slice(-MAX_VISIBLE_LOG_LINES);
 
   return (
-    <section className="terminal-panel" aria-live="polite" aria-label="Scholarship search progress">
+    <section className="terminal-panel" aria-live="polite" aria-label="Progress and quick actions">
       <div className="terminal-panel-bar">
-        <div className="terminal-dots" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
+        <div className="mini-bee-mark" aria-hidden="true" />
         <div>
-          <p className="terminal-label">terminal-like progress</p>
+          <p className="terminal-label">ScholarBee pipeline</p>
           <h2>{headline}</h2>
         </div>
         <span className={`terminal-run-state ${failedCount ? "terminal-run-state-failed" : ""}`}>
@@ -51,22 +52,27 @@ export function ProgressPanel({
         <span>{activeStep ? `active: ${activeStep.label}` : "active: none"}</span>
       </div>
 
+      {actions ? <div className="quick-actions-panel">{actions}</div> : null}
+
       <ol className="terminal-step-grid" aria-label="Pipeline steps">
-        {steps.map((step, index) => (
-          <li className={`terminal-step terminal-step-${step.status}`} key={step.id}>
-            <span className="terminal-step-index">{String(index + 1).padStart(2, "0")}</span>
-            <span className="terminal-step-copy">
-              <strong>{step.label}</strong>
-              {step.message ? <small>{step.message}</small> : null}
-            </span>
-            {typeof step.count === "number" ? (
-              <span className="terminal-step-count">
-                {step.count}
-                {step.countLabel ? <small>{step.countLabel}</small> : null}
+        {steps.map((step, index) => {
+          const visualStatus = step.status === "running" ? "active" : step.status;
+          return (
+            <li className={`terminal-step terminal-step-${visualStatus}`} key={step.id}>
+              <span className="terminal-step-index">{String(index + 1).padStart(2, "0")}</span>
+              <span className="terminal-step-copy">
+                <strong>{step.label}</strong>
+                {step.message ? <small>{step.message}</small> : null}
               </span>
-            ) : null}
-          </li>
-        ))}
+              {typeof step.count === "number" ? (
+                <span className="terminal-step-count">
+                  {step.count}
+                  {step.countLabel ? <small>{step.countLabel}</small> : null}
+                </span>
+              ) : null}
+            </li>
+          );
+        })}
       </ol>
 
       <div className="terminal-log" aria-label="Search log lines">

@@ -28,6 +28,21 @@ class QueryAgentTests(unittest.TestCase):
             "budget": {"currency": "usd", "max_personal_contribution": 8000},
             "preferred_modality": "Any",
         }
+        self.specific_search_intent_profile = {
+            "search_intent": {
+                "country_or_nationality": "Colombia",
+                "languages": [
+                    {"language": "Spanish", "level": "Native", "display": "Spanish Native"},
+                    {"language": "English", "level": "B2", "display": "English B2"},
+                ],
+                "scholarship_type": "Full funding",
+                "academic_level": "master",
+                "field_of_study": "Computer Science",
+                "specialization": "Artificial Intelligence",
+                "target_countries": ["Canada"],
+                "search_specificity": "specific",
+            }
+        }
 
     def test_build_prompt_uses_normalized_profile(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -84,6 +99,70 @@ class QueryAgentTests(unittest.TestCase):
         self.assertTrue(any(query["target_country"] == "Canada" for query in queries))
         self.assertTrue(any(query["target_country"] == "Germany" for query in queries))
 
+    def test_query_family_coverage_from_specific_search_intent(self) -> None:
+        queries = QueryAgent().build_deterministic_query_families(
+            self.specific_search_intent_profile
+        )
+        query_families = {query["query_family"] for query in queries}
+        source_families = {query["source_family"] for query in queries}
+        query_text = "\n".join(query["query"] for query in queries)
+
+        self.assertTrue(
+            {
+                "destination",
+                "nationality",
+                "field",
+                "academic_level",
+                "scholarship_type",
+                "university",
+                "government",
+                "embassy",
+                "international_organization",
+                "foundation",
+                "company",
+                "professional_association",
+                "verified_secondary_source",
+            }.issubset(query_families)
+        )
+        self.assertTrue(
+            {
+                "university",
+                "government",
+                "embassy",
+                "international_organization",
+                "foundation",
+                "company",
+                "professional_association",
+            }.issubset(source_families)
+        )
+        self.assertTrue(any(query["target_country"] == "Canada" for query in queries))
+        self.assertIn("Canada", query_text)
+        self.assertNotIn("Germany", query_text)
+        self.assertNotIn("Netherlands", query_text)
+        self.assertNotIn("Spain", query_text)
+        self.assertNotIn("United States", query_text)
+
+    def test_general_valid_search_intent_does_not_invent_optional_fields(self) -> None:
+        profile = {
+            "search_intent": {
+                "country_or_nationality": "Ecuadorian",
+                "languages": [{"language": "Spanish", "level": None, "display": "Spanish"}],
+                "scholarship_type": "Partial funding",
+                "search_specificity": "general",
+            }
+        }
+
+        queries = QueryAgent().build_deterministic_query_families(profile)
+        query_text = "\n".join(query["query"] for query in queries)
+
+        self.assertTrue(queries)
+        self.assertIn("Ecuadorian", query_text)
+        self.assertIn("Partial funding", query_text)
+        self.assertNotIn("Canada", query_text)
+        self.assertNotIn("Germany", query_text)
+        self.assertNotIn("Artificial Intelligence", query_text)
+        self.assertTrue(all(query["target_country"] == "global" for query in queries))
+
     def test_modality_is_omitted_when_any_or_missing(self) -> None:
         profile_without_modality = dict(self.normalized_profile)
         profile_without_modality["preferred_modality"] = "Any"
@@ -105,6 +184,26 @@ class QueryAgentTests(unittest.TestCase):
         self.assertTrue(
             any("online scholarships" in query["query"].casefold() for query in queries)
         )
+
+    def test_query_metadata_survives_validation(self) -> None:
+        queries = validate_generated_queries(
+            [
+                {
+                    "query": "Canada university scholarships",
+                    "target_country": "Canada",
+                    "reason": "Metadata test.",
+                    "priority": 1,
+                    "query_family": "university",
+                    "source_family": "university",
+                    "expansion_round": 1,
+                }
+            ]
+        )
+
+        self.assertEqual(queries[0]["query_family"], "university")
+        self.assertEqual(queries[0]["source_family"], "university")
+        self.assertEqual(queries[0]["expansion_round"], 1)
+
 
     def test_validate_generated_queries_deduplicates_repeated_queries(self) -> None:
         queries = validate_generated_queries(

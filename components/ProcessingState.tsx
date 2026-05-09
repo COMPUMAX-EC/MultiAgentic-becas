@@ -5,8 +5,7 @@ import { useEffect, useState } from "react";
 const PROCESSING_STEPS = [
   "Reading free-text profile",
   "Checking scholarship goals",
-  "Preparing multipart payload",
-  "Queuing CV for later backend handoff",
+  "Preparing written profile payload",
   "Selecting recommended opportunities",
   "Separating less recommended options",
 ];

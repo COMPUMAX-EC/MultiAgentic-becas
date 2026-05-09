@@ -13,6 +13,21 @@ from utils.json_handler import JsonHandlerError, parse_json_text
 
 
 PROMPT_TEMPLATE_PATH = settings.PROJECT_ROOT / "prompts" / "query_generation.txt"
+REQUIRED_QUERY_FAMILIES = (
+    "destination",
+    "nationality",
+    "field",
+    "academic_level",
+    "scholarship_type",
+    "university",
+    "government",
+    "embassy",
+    "international_organization",
+    "foundation",
+    "company",
+    "professional_association",
+    "verified_secondary_source",
+)
 
 
 class QueryGenerationError(RuntimeError):
@@ -51,122 +66,251 @@ class QueryAgent:
 
     def build_prompt(self, normalized_profile: dict) -> str:
         profile_json = json.dumps(normalized_profile, indent=2, ensure_ascii=False)
-        return f"{self.prompt_template}\n\nNormalized profile:\n{profile_json}"
+        search_intent = self._search_intent(normalized_profile)
+        search_intent_json = json.dumps(search_intent, indent=2, ensure_ascii=False)
+        return (
+            f"{self.prompt_template}\n\n"
+            f"Search intent:\n{search_intent_json}\n\n"
+            f"Normalized profile:\n{profile_json}"
+        )
 
     def build_deterministic_query_families(self, normalized_profile: dict) -> list[dict]:
-        nationality = (
-            self._text(
-                normalized_profile.get("country_of_origin")
-                or normalized_profile.get("nationality")
-            )
-            or "international"
-        )
-        academic_level = self._academic_level_text(normalized_profile)
-        field = self._field_text(normalized_profile)
-        scholarship_type = self._scholarship_type_text(normalized_profile)
-        languages = self._languages_text(normalized_profile.get("languages"))
-        target_countries = self._target_countries(normalized_profile)
-        modality = self._explicit_modality_text(normalized_profile)
-        budget_terms = self._budget_terms(normalized_profile)
+        intent = self._search_intent(normalized_profile)
+        nationality = self._country_or_nationality_text(intent)
+        academic_level = self._academic_level_text(intent)
+        field = self._field_text(intent)
+        scholarship_type = self._scholarship_type_text(intent)
+        languages = self._languages_text(intent.get("languages"))
+        target_countries = self._target_countries(intent)
+        modality = self._explicit_modality_text(intent)
+        budget_terms = self._budget_terms(intent)
+        search_specificity = self._text(intent.get("search_specificity")) or "moderate"
 
         queries: list[dict] = []
-        priority = 1
-        for country, template, reason in self._expanded_query_templates(target_countries):
-            query = template.format(
-                    nationality=nationality,
-                    academic_level=academic_level,
-                    field=field,
-                    scholarship_type=scholarship_type,
-                    country=country,
-                    languages=languages,
-                    country_tld=self._country_tld(country),
-                    budget_terms=budget_terms,
-                )
-            query = self._compact_query(query)
-            if languages:
-                query = self._compact_query(f"{query} {languages}")
+        for country, template in self._expanded_query_templates(
+            target_countries,
+            search_specificity,
+        ):
+            optional_values = {
+                "academic_level": academic_level,
+                "field": field,
+                "languages": languages,
+                "modality": modality,
+                "budget_terms": budget_terms,
+                "country": "" if country == "global" else country,
+            }
+            query = self._format_query(
+                template["template"],
+                {
+                    "nationality": nationality,
+                    "academic_level": academic_level,
+                    "field": field,
+                    "scholarship_type": scholarship_type,
+                    "country": "" if country == "global" else country,
+                    "languages": languages,
+                    "country_tld": self._country_tld(country),
+                    "budget_terms": budget_terms,
+                    "modality": modality,
+                },
+                optional_values,
+            )
+            if not query:
+                continue
             queries.append(
                 {
                     "query": query,
                     "target_country": country,
-                    "reason": reason,
-                    "priority": priority,
+                    "reason": template["reason"],
+                    "query_family": template["query_family"],
+                    "source_family": template["source_family"],
+                    "expansion_round": template["expansion_round"],
+                    "priority": len(queries) + 1,
                 }
             )
-            priority += 1
 
         if modality:
             for country in target_countries:
                 queries.append(
                     {
                         "query": self._compact_query(
-                            f"{modality} scholarships {field} {academic_level} {country}"
+                            " ".join(
+                                value
+                                for value in (
+                                    modality,
+                                    "scholarships",
+                                    field,
+                                    academic_level,
+                                    country if country != "global" else "",
+                                )
+                                if value
+                            )
                         ),
                         "target_country": country,
                         "reason": "Search explicitly requested modality opportunities.",
-                        "priority": priority,
+                        "query_family": "destination",
+                        "source_family": "unknown",
+                        "expansion_round": 0,
+                        "priority": len(queries) + 1,
                     }
                 )
-                priority += 1
 
         return queries
 
     def _expanded_query_templates(
         self,
         target_countries: list[str],
-    ) -> list[tuple[str, str, str]]:
-        templates = [
-            (
-                "{nationality} students {academic_level} scholarship {field} {scholarship_type}",
-                "General profile match by nationality, level, field, and funding type.",
-            ),
-            (
-                "international students {academic_level} scholarship {field} {country}",
-                "General international student scholarship match by target country.",
-            ),
-            (
-                "{country} government scholarships {nationality} students {academic_level} {field}",
-                "Search government scholarship programs by origin, level, and field.",
-            ),
-            (
-                "university scholarships international students {field} {academic_level} {country} site:.edu",
-                "Search university scholarship pages by field, level, and target country.",
-            ),
-            (
-                "site:edu.{country_tld} scholarships international students {field} {academic_level}",
-                "Search country-specific university education domains.",
-            ),
-            (
-                "foundation scholarships organization scholarships {nationality} students {field} {academic_level}",
-                "Search organization and foundation scholarship opportunities.",
-            ),
-            (
-                "research institute scholarships {field} {academic_level} international students",
-                "Search institute and research center scholarships.",
-            ),
-            (
-                "technology company scholarships research fellowship {field} students international",
-                "Search company scholarships and research fellowship opportunities.",
-            ),
-            (
-                "international organization scholarships {nationality} students {academic_level} {country}",
-                "Search international organization scholarships.",
-            ),
-            (
-                "verified scholarship news {field} {country} international students",
-                "Search verified informational sources reporting scholarship calls.",
-            ),
-            (
-                "scholarship call {field} {academic_level} {country} {budget_terms}",
-                "Search financial-need and funding-aware scholarship opportunities.",
-            ),
+        search_specificity: str,
+    ) -> list[tuple[str, dict]]:
+        base_round = 0
+        exact_round = 0 if search_specificity == "specific" else 1
+        source_round = 1 if search_specificity == "specific" else 0
+        broad_round = 2
+
+        templates: list[dict] = [
+            {
+                "query_family": "destination",
+                "source_family": "unknown",
+                "expansion_round": base_round,
+                "template": "{nationality} students {scholarship_type} {academic_level?} scholarship {field?} {country?}",
+                "reason": "Search exact destination-aware scholarship matches.",
+            },
+            {
+                "query_family": "nationality",
+                "source_family": "unknown",
+                "expansion_round": base_round,
+                "template": "{nationality} students {scholarship_type} scholarships {academic_level?} {field?} {languages?}",
+                "reason": "Search by applicant origin and funding type.",
+            },
+            {
+                "query_family": "field",
+                "source_family": "unknown",
+                "expansion_round": exact_round,
+                "template": "{field?} scholarships {nationality} students {scholarship_type} {academic_level?} {country?}",
+                "reason": "Search by field or specialization when provided.",
+            },
+            {
+                "query_family": "academic_level",
+                "source_family": "unknown",
+                "expansion_round": exact_round,
+                "template": "{academic_level?} scholarships {nationality} students {scholarship_type} {field?} {country?}",
+                "reason": "Search by academic level when provided.",
+            },
+            {
+                "query_family": "scholarship_type",
+                "source_family": "unknown",
+                "expansion_round": base_round,
+                "template": "{scholarship_type} scholarships {nationality} students {academic_level?} {field?} {country?}",
+                "reason": "Search by requested funding type.",
+            },
+            {
+                "query_family": "university",
+                "source_family": "university",
+                "expansion_round": source_round,
+                "template": "{country?} university scholarships international students {field?} {academic_level?} site:.edu",
+                "reason": "Search university scholarship pages.",
+            },
+            {
+                "query_family": "government",
+                "source_family": "government",
+                "expansion_round": source_round,
+                "template": "{country?} government scholarships {nationality} students {academic_level?} {field?}",
+                "reason": "Search government scholarship programs.",
+            },
+            {
+                "query_family": "field",
+                "source_family": "unknown",
+                "expansion_round": source_round,
+                "template": "research institute scholarships {field?} {academic_level?} international students {country?}",
+                "reason": "Search research institute scholarship and fellowship pages.",
+            },
+            {
+                "query_family": "embassy",
+                "source_family": "embassy",
+                "expansion_round": source_round,
+                "template": "embassy scholarships {nationality} students {country?} postgraduate {field?}",
+                "reason": "Search embassy scholarship announcements.",
+            },
+            {
+                "query_family": "international_organization",
+                "source_family": "international_organization",
+                "expansion_round": broad_round,
+                "template": "international organization scholarships {nationality} students {academic_level?} {field?} {country?}",
+                "reason": "Search international organization scholarship programs.",
+            },
+            {
+                "query_family": "foundation",
+                "source_family": "foundation",
+                "expansion_round": broad_round,
+                "template": "foundation scholarships {nationality} students {field?} {academic_level?} {scholarship_type}",
+                "reason": "Search foundation-funded opportunities.",
+            },
+            {
+                "query_family": "company",
+                "source_family": "company",
+                "expansion_round": broad_round,
+                "template": "company scholarships {field?} students {country?} {academic_level?}",
+                "reason": "Search company scholarship and fellowship opportunities.",
+            },
+            {
+                "query_family": "professional_association",
+                "source_family": "professional_association",
+                "expansion_round": broad_round,
+                "template": "professional association scholarships {field?} students {academic_level?} {country?}",
+                "reason": "Search professional association scholarships.",
+            },
+            {
+                "query_family": "verified_secondary_source",
+                "source_family": "verified_secondary_source",
+                "expansion_round": broad_round,
+                "template": "verified scholarship news {nationality} students {field?} {country?} {academic_level?}",
+                "reason": "Search verified secondary sources that report scholarship calls.",
+            },
+            {
+                "query_family": "scholarship_type",
+                "source_family": "unknown",
+                "expansion_round": broad_round,
+                "template": "scholarship call {field?} {academic_level?} {country?} {budget_terms?}",
+                "reason": "Search financial-need and funding-aware scholarship calls.",
+            },
         ]
 
-        expanded_templates: list[tuple[str, str, str]] = []
-        for template, reason in templates:
+        expanded_templates: list[tuple[str, dict]] = []
+        for template in templates:
             for country in target_countries:
-                expanded_templates.append((country, template, reason))
+                expanded_templates.append((country, template))
         return expanded_templates
+
+    def _search_intent(self, normalized_profile: dict) -> dict:
+        search_intent = normalized_profile.get("search_intent")
+        if isinstance(search_intent, dict):
+            return search_intent
+        return normalized_profile
+
+    def _format_query(
+        self,
+        template: str,
+        values: dict[str, str],
+        optional_values: dict[str, str],
+    ) -> str:
+        query = template
+        for field, value in optional_values.items():
+            placeholder = "{" + field + "?}"
+            query = query.replace(placeholder, value or "")
+        for field, value in values.items():
+            placeholder = "{" + field + "}"
+            query = query.replace(placeholder, value or "")
+        query = self._compact_query(query)
+        return query
+
+    def _country_or_nationality_text(self, normalized_profile: dict) -> str:
+        return (
+            self._text(
+                normalized_profile.get("country_or_nationality")
+                or normalized_profile.get("country_of_origin")
+                or normalized_profile.get("nationality")
+            )
+            or "international"
+        )
 
     def _field_text(self, normalized_profile: dict) -> str:
         specialization = self._text(normalized_profile.get("specialization"))
@@ -180,7 +324,7 @@ class QueryAgent:
         if isinstance(interests, list) and interests:
             fields = [self._text(value) for value in interests[:2]]
             return " ".join(value for value in fields if value)
-        return field_of_study or "all fields"
+        return field_of_study
 
     def _academic_level_text(self, normalized_profile: dict) -> str:
         academic_level = self._text(normalized_profile.get("academic_level"))
@@ -189,7 +333,7 @@ class QueryAgent:
             "unknown",
             "not specified",
         }:
-            return "students"
+            return ""
         return academic_level
 
     def _scholarship_type_text(self, normalized_profile: dict) -> str:
@@ -229,14 +373,19 @@ class QueryAgent:
             cleaned_countries = [
                 country
                 for country in cleaned_countries
-                if country and country.casefold() not in {"any", "unknown", "not specified"}
+                if country
+                and country.casefold()
+                not in {"any", "global", "unknown", "not specified"}
             ]
             if cleaned_countries:
                 return cleaned_countries[:4]
         return ["global"]
 
     def _explicit_modality_text(self, normalized_profile: dict) -> str:
-        modality = self._text(normalized_profile.get("preferred_modality"))
+        modality = self._text(
+            normalized_profile.get("modality")
+            or normalized_profile.get("preferred_modality")
+        )
         if modality.casefold() in {
             "",
             "any",

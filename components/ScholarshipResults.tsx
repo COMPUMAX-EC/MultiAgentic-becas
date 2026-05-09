@@ -1,24 +1,21 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { BackendStatus } from "./BackendStatus";
 import { ProgressLogLine, ProgressPanel } from "./ProgressPanel";
-import { ScholarshipResult } from "../types/scholarship";
 import { ScholarshipRow } from "./ScholarshipRow";
-import { mockScholarships } from "../src/data/mockScholarships";
 import {
   getLatestDemoResponse,
   searchScholarshipsWithProfileInput,
 } from "../services/scholarshipApi";
-import { WorkflowStep, WorkflowStepStatus } from "../types/scholarship";
+import { ScholarshipResult, WorkflowStep, WorkflowStepStatus } from "../types/scholarship";
 
 const LESS_RECOMMENDED_DISPLAY_LIMIT = 10;
 
 type PipelineTemplate = {
   id: string;
   label: string;
-  count?: number;
-  countLabel?: string;
-  log: (fileName: string | null) => string;
+  log: () => string;
 };
 
 const PIPELINE: PipelineTemplate[] = [
@@ -28,29 +25,33 @@ const PIPELINE: PipelineTemplate[] = [
     log: () => "Profile input received.",
   },
   {
-    id: "cv",
-    label: "Reading uploaded CV PDF, if provided",
-    log: (fileName) =>
-      fileName ? `CV PDF uploaded: ${fileName}` : "No CV PDF uploaded. Continuing with profile text.",
-  },
-  {
     id: "normalize",
     label: "Normalizing profile",
-    log: () => "Preparing a normalized profile from the submitted text.",
+    log: () => "Preparing a normalized profile.",
+  },
+  {
+    id: "intent",
+    label: "Building search intent",
+    log: () => "Waiting for backend search intent.",
   },
   {
     id: "queries",
-    label: "Generating global scholarship search queries",
+    label: "Generating global scholarship queries",
     log: () => "Waiting for backend query generation.",
   },
   {
     id: "search",
-    label: "Searching global scholarship sources",
+    label: "Searching global sources",
     log: () => "Waiting for backend source search.",
   },
   {
+    id: "dedupe",
+    label: "Deduplicating candidates",
+    log: () => "Waiting for backend candidate deduplication.",
+  },
+  {
     id: "validate",
-    label: "Validating official and verified sources",
+    label: "Validating trusted sources",
     log: () => "Waiting for backend source validation.",
   },
   {
@@ -64,9 +65,14 @@ const PIPELINE: PipelineTemplate[] = [
     log: () => "Waiting for backend extraction.",
   },
   {
-    id: "match",
-    label: "Matching scholarships with profile",
-    log: () => "Waiting for backend matching.",
+    id: "links",
+    label: "Resolving useful links",
+    log: () => "Waiting for backend link resolution.",
+  },
+  {
+    id: "score",
+    label: "Scoring compatibility",
+    log: () => "Waiting for backend compatibility scoring.",
   },
   {
     id: "rank",
@@ -80,7 +86,7 @@ const PIPELINE: PipelineTemplate[] = [
   },
 ];
 
-const initialSteps = createSteps(-1, null);
+const initialSteps = createSteps(-1);
 
 type ScholarshipResultsProps = {
   results: ScholarshipResult[];
@@ -88,8 +94,6 @@ type ScholarshipResultsProps = {
 
 export function ScholarshipSearchExperience() {
   const [profileText, setProfileText] = useState("");
-  const [cvFile, setCvFile] = useState<File | null>(null);
-  const [fileError, setFileError] = useState("");
   const [profileError, setProfileError] = useState("");
   const [runId, setRunId] = useState(0);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -100,15 +104,16 @@ export function ScholarshipSearchExperience() {
   const [results, setResults] = useState<ScholarshipResult[]>([]);
   const [backendWorkflowSteps, setBackendWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [pageMessage, setPageMessage] = useState("");
+  const [missingRequiredFields, setMissingRequiredFields] = useState<string[]>([]);
+  const [inputWarning, setInputWarning] = useState("");
 
-  const cvFileName = cvFile?.name || null;
   const visibleSteps = backendWorkflowSteps.length
     ? backendWorkflowSteps
     : hasSubmitted
-      ? createSteps(activeIndex, cvFileName)
+      ? createSteps(activeIndex)
       : initialSteps;
   const showResults = hasSubmitted && !isRunning && results.length > 0;
-  const showFallbackActions = hasSubmitted && !isRunning && Boolean(pageMessage);
+  const showMessage = hasSubmitted && !isRunning && Boolean(pageMessage);
 
   useEffect(() => {
     if (!isRunning || !hasSubmitted) {
@@ -144,7 +149,7 @@ export function ScholarshipSearchExperience() {
         ...currentLogs,
         {
           id: `${runId}-${step.id}`,
-          message: step.log(cvFileName),
+          message: step.log(),
           tone: step.id === "final" ? "success" : "default",
         },
       ]);
@@ -153,7 +158,7 @@ export function ScholarshipSearchExperience() {
     }, 620);
 
     return () => window.clearInterval(intervalId);
-  }, [cvFileName, hasSubmitted, isRunning, runId]);
+  }, [hasSubmitted, isRunning, runId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -163,39 +168,46 @@ export function ScholarshipSearchExperience() {
 
     const trimmedProfile = profileText.trim();
     if (!trimmedProfile) {
-      setProfileError("Describe your profile and scholarship goals before submitting.");
-      return;
-    }
-
-    if (fileError) {
+      setProfileError("Describe your profile before submitting.");
       return;
     }
 
     setProfileError("");
-    setHasSubmitted(true);
     setPageMessage("");
+    setMissingRequiredFields([]);
+    setInputWarning("");
     setBackendWorkflowSteps([]);
     setResults([]);
     setActiveIndex(-1);
+    setHasSubmitted(true);
     setIsRunning(true);
     setRunId((currentRunId) => currentRunId + 1);
 
     try {
       const response = await searchScholarshipsWithProfileInput({
         rawProfileText: trimmedProfile,
-        cvPdf: cvFile,
       });
 
+      setInputWarning("");
+      setMissingRequiredFields(response.missingRequiredFields);
+
       if (!response.results.length) {
+        const missingMessage = response.missingRequiredFields.length
+          ? `Missing required fields: ${response.missingRequiredFields
+              .map(formatMissingField)
+              .join(", ")}.`
+          : "";
         setBackendWorkflowSteps(
           response.workflowSteps.length
             ? response.workflowSteps
-            : createFailedSteps(activeIndex, cvFileName),
+            : createFailedSteps(activeIndex),
         );
         setPageMessage(
           response.isUnsupportedShape
             ? "The backend responded, but recommendations could not be read."
-            : response.warnings[0] ||
+            : missingMessage ||
+                response.message ||
+                response.warnings[0] ||
                 "No live scholarship recommendations are available for this profile yet.",
         );
         setLogs((currentLogs) => [
@@ -210,11 +222,15 @@ export function ScholarshipSearchExperience() {
             message: warning,
             tone: "warning" as const,
           })),
-          {
-            id: `${Date.now()}-no-results`,
-            message: "No live recommendations were returned for this profile.",
-            tone: "warning",
-          },
+          ...(missingMessage
+            ? [
+                {
+                  id: `${Date.now()}-missing-fields`,
+                  message: missingMessage,
+                  tone: "warning" as const,
+                },
+              ]
+            : []),
         ]);
         return;
       }
@@ -243,12 +259,12 @@ export function ScholarshipSearchExperience() {
 
       if (response.isPartialFailure) {
         setPageMessage(
-          "The backend returned partial results. You can review the available scholarships or try again.",
+          "The backend returned partial results. You can review the available scholarships or retry the search.",
         );
       }
     } catch (error) {
-      setBackendWorkflowSteps(createFailedSteps(activeIndex, cvFileName));
-      setPageMessage(`${getReadableErrorMessage(error)} Choose a fallback option below.`);
+      setBackendWorkflowSteps(createFailedSteps(activeIndex));
+      setPageMessage(getReadableErrorMessage(error));
       setLogs((currentLogs) => [
         ...currentLogs,
         {
@@ -262,30 +278,6 @@ export function ScholarshipSearchExperience() {
     }
   }
 
-  function handlePdfChange(event: ChangeEvent<HTMLInputElement>) {
-    const selectedFile = event.target.files?.[0] || null;
-
-    if (!selectedFile) {
-      setCvFile(null);
-      setFileError("");
-      return;
-    }
-
-    const isPdf =
-      selectedFile.type === "application/pdf" ||
-      selectedFile.name.toLowerCase().endsWith(".pdf");
-
-    if (!isPdf) {
-      event.target.value = "";
-      setCvFile(null);
-      setFileError("Only PDF files are accepted for the CV/resume upload.");
-      return;
-    }
-
-    setCvFile(selectedFile);
-    setFileError("");
-  }
-
   async function handleLoadLatestDemo() {
     setIsLoadingDemo(true);
     setPageMessage("");
@@ -293,7 +285,7 @@ export function ScholarshipSearchExperience() {
     try {
       const response = await getLatestDemoResponse();
       if (!response.results.length) {
-        setPageMessage("No latest demo recommendations were available.");
+        setPageMessage("No saved demo recommendations were available.");
         return;
       }
 
@@ -311,27 +303,10 @@ export function ScholarshipSearchExperience() {
         },
       ]);
     } catch (error) {
-      setPageMessage(`${getReadableErrorMessage(error)} You can still use sample results.`);
+      setPageMessage(getReadableErrorMessage(error));
     } finally {
       setIsLoadingDemo(false);
     }
-  }
-
-  function handleUseSampleResults() {
-    setHasSubmitted(true);
-    setIsRunning(false);
-    setActiveIndex(PIPELINE.length);
-    setBackendWorkflowSteps([]);
-    setResults(mockScholarships);
-    setPageMessage("");
-    setLogs((currentLogs) => [
-      ...currentLogs,
-      {
-        id: `${Date.now()}-sample-results`,
-        message: `Loaded ${mockScholarships.length} local sample scholarship results.`,
-        tone: "success",
-      },
-    ]);
   }
 
   function handleTryAgain() {
@@ -344,116 +319,152 @@ export function ScholarshipSearchExperience() {
     }
   }
 
+  function handleClearForm() {
+    if (isRunning) {
+      return;
+    }
+    setProfileText("");
+    setProfileError("");
+    setHasSubmitted(false);
+    setPageMessage("");
+    setMissingRequiredFields([]);
+    setInputWarning("");
+    setBackendWorkflowSteps([]);
+    setResults([]);
+    setLogs([]);
+    setActiveIndex(-1);
+  }
+
+  const quickActions = (
+    <>
+      <button
+        className="quick-action quick-action-primary"
+        type="submit"
+        disabled={isRunning || isLoadingDemo}
+      >
+        {isRunning ? "Searching..." : "Start search"}
+      </button>
+      <button
+        className="quick-action"
+        type="button"
+        onClick={handleClearForm}
+        disabled={isRunning || isLoadingDemo}
+      >
+        Clear form
+      </button>
+      {hasSubmitted ? (
+        <button
+          className="quick-action"
+          type="button"
+          onClick={handleTryAgain}
+          disabled={isRunning || isLoadingDemo}
+        >
+          Retry search
+        </button>
+      ) : null}
+      <button
+        className="quick-action"
+        type="button"
+        onClick={handleLoadLatestDemo}
+        disabled={isRunning || isLoadingDemo}
+      >
+        {isLoadingDemo ? "Loading..." : "Load saved demo"}
+      </button>
+    </>
+  );
+
   return (
-    <main className="page-shell honeycomb-surface">
+    <main className="page-shell scholarbee-surface">
+      <header className="site-header" aria-label="ScholarBee header">
+        <div className="brand-lockup">
+          <div className="bee-mark" aria-hidden="true">
+            <span />
+          </div>
+          <div>
+            <p className="eyebrow">AI Scholarship Search</p>
+            <h1>ScholarBee</h1>
+          </div>
+        </div>
+        <BackendStatus />
+      </header>
+
       <section className="content-frame">
-        <header className="site-header" aria-label="Scholarship finder intro">
-          <div className="hero-copy-block">
-            <p className="eyebrow">Global scholarship finder</p>
-            <h1>Follow every search step, then open the source.</h1>
-            <p className="hero-copy">
-              Enter your profile, optionally attach a CV PDF, and watch a clear
-              search pipeline before the recommendations appear.
-            </p>
+        <div className="dashboard-intro">
+          <div>
+            <p className="section-kicker">Global scholarship finder</p>
+            <h2>Find scholarships that fit your profile, then open the source.</h2>
           </div>
+          <p>
+            Add your written profile and watch the live search pipeline move
+            from profile understanding to ranked results.
+          </p>
+        </div>
 
-          <div className="honey-mark" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
-        </header>
-
-        <section className="workflow-card" aria-label="Scholarship profile flow">
-          <form className="profile-form" onSubmit={handleSubmit}>
+        <form className="profile-form" onSubmit={handleSubmit}>
+          <section className="dashboard-grid" aria-label="ScholarBee dashboard">
             <div className="input-panel">
               <p className="section-kicker">Profile input</p>
-              <h2>Ingresa tu perfil y el tipo de beca al que tú quieres aplicar</h2>
+              <h3>Ingresa tu perfil y el tipo de beca al que tú quieres aplicar</h3>
               <p className="input-helper">
-                Describe your academic profile, nationality, languages, study
-                area, target countries, and scholarship goals.
+                Escribe tu nacionalidad o país, idioma(s), tipo de beca, meta
+                académica, destino, área de estudio, presupuesto o modalidad si aplica.
               </p>
-              <p className="search-duration-note">
-                This global search may take a few minutes while the agent
-                reviews scholarship sources.
+              <p className="minimum-guidance">
+                Para buscar, incluye mínimo país o nacionalidad, idioma(s) y tipo de beca.
               </p>
 
               <label className="field-group profile-textarea">
-                <span>Your profile and scholarship goals</span>
+                <span>Profile and scholarship intent</span>
                 <textarea
                   value={profileText}
                   onChange={(event) => {
                     setProfileText(event.target.value);
                     setProfileError("");
                   }}
-                  placeholder="Soy estudiante colombiano de ingeniería de sistemas, hablo español e inglés B2, quiero aplicar a becas de maestría en Canadá o Alemania para inteligencia artificial..."
+                  placeholder="Soy estudiante colombiano de ingeniería de sistemas, hablo español e inglés B2, busco beca completa para maestría en inteligencia artificial en Canadá..."
                 />
                 <small>
-                  Include your profile and scholarship intent here. The backend
-                  receives this as raw_profile_text.
-                </small>
-              </label>
-
-              <label className="field-group file-field">
-                <span>CV/resume PDF (optional)</span>
-                <input type="file" accept="application/pdf,.pdf" onChange={handlePdfChange} />
-                <small>
-                  {cvFile
-                    ? `Selected file: ${cvFile.name}`
-                    : "PDF only. The file is kept ready for multipart/form-data."}
+                  One clear paragraph is enough. ScholarBee uses only this written profile text.
                 </small>
               </label>
 
               {profileError ? <p className="form-error">{profileError}</p> : null}
-              {fileError ? <p className="form-error">{fileError}</p> : null}
+              {missingRequiredFields.length ? (
+                <div className="missing-fields-panel" role="status">
+                  <strong>Missing required fields</strong>
+                  <ul>
+                    {missingRequiredFields.map((field) => (
+                      <li key={field}>{formatMissingField(field)}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {inputWarning ? <p className="form-warning">{inputWarning}</p> : null}
 
               <button className="form-submit" type="submit" disabled={isRunning}>
                 {isRunning ? "Searching globally..." : "Search scholarships"}
               </button>
             </div>
 
-            <ProgressPanel steps={visibleSteps} logs={logs} isRunning={isRunning} />
+            <ProgressPanel
+              steps={visibleSteps}
+              logs={logs}
+              isRunning={isRunning}
+              actions={quickActions}
+            />
+          </section>
 
-            {showFallbackActions ? (
-              <section className="message-panel message-panel-warning" role="status">
-                <div>
-                  <p className="section-kicker">Search status</p>
-                  <p>{pageMessage}</p>
-                </div>
-                <div className="fallback-actions">
-                  <button
-                    className="official-link"
-                    type="button"
-                    onClick={handleTryAgain}
-                    disabled={isRunning || isLoadingDemo}
-                  >
-                    Try again
-                  </button>
-                  <button
-                    className="official-link"
-                    type="button"
-                    onClick={handleLoadLatestDemo}
-                    disabled={isRunning || isLoadingDemo}
-                  >
-                    {isLoadingDemo ? "Loading..." : "Load saved demo results"}
-                  </button>
-                  <button
-                    className="official-link"
-                    type="button"
-                    onClick={handleUseSampleResults}
-                    disabled={isRunning || isLoadingDemo}
-                  >
-                    Use sample results
-                  </button>
-                </div>
-              </section>
-            ) : null}
+          {showMessage ? (
+            <section className="message-panel message-panel-warning" role="status">
+              <div>
+                <p className="section-kicker">Search status</p>
+                <p>{pageMessage}</p>
+              </div>
+            </section>
+          ) : null}
 
-            {showResults ? <ScholarshipResults results={results} /> : null}
-          </form>
-        </section>
+          <ScholarshipResults results={showResults ? results : []} />
+        </form>
       </section>
     </main>
   );
@@ -462,11 +473,24 @@ export function ScholarshipSearchExperience() {
 export function ScholarshipResults({ results }: ScholarshipResultsProps) {
   if (!results.length) {
     return (
-      <section className="results-section">
-        <p className="empty-results">
-          No scholarship recommendations are ready yet. Submit your profile to
-          generate the first list.
-        </p>
+      <section className="results-section" aria-label="Scholarship results">
+        <div className="results-heading">
+          <p className="section-kicker">Results</p>
+          <h3>Scholarship matches</h3>
+        </div>
+        <div className="result-columns">
+          <ResultGroup
+            title="Recommended Scholarships"
+            results={[]}
+            emptyMessage="No recommended scholarships yet."
+          />
+          <ResultGroup
+            title="Less Recommended"
+            results={[]}
+            emptyMessage="No less recommended scholarships yet."
+            secondary
+          />
+        </div>
       </section>
     );
   }
@@ -484,11 +508,7 @@ export function ScholarshipResults({ results }: ScholarshipResultsProps) {
     uniqueResults.filter(
       (result) => !isRecommended(result, hasHighOrMediumRecommendation),
     ),
-  );
-  const visibleLessRecommendedResults = lessRecommendedResults.slice(
-    0,
-    LESS_RECOMMENDED_DISPLAY_LIMIT,
-  );
+  ).slice(0, LESS_RECOMMENDED_DISPLAY_LIMIT);
 
   return (
     <section className="results-section" aria-label="Scholarship results">
@@ -497,17 +517,19 @@ export function ScholarshipResults({ results }: ScholarshipResultsProps) {
         <h3>Scholarship matches</h3>
       </div>
 
-      <ResultGroup
-        title="Recomendadas"
-        results={recommendedResults}
-        emptyMessage="No recommended scholarships were found yet."
-      />
-      <ResultGroup
-        title="No tan recomendadas"
-        results={visibleLessRecommendedResults}
-        emptyMessage="No additional scholarships were found."
-        secondary
-      />
+      <div className="result-columns">
+        <ResultGroup
+          title="Recommended Scholarships"
+          results={recommendedResults}
+          emptyMessage="No recommended scholarships were found."
+        />
+        <ResultGroup
+          title="Less Recommended"
+          results={lessRecommendedResults}
+          emptyMessage="No additional scholarships were found."
+          secondary
+        />
+      </div>
     </section>
   );
 }
@@ -515,17 +537,20 @@ export function ScholarshipResults({ results }: ScholarshipResultsProps) {
 function ResultGroup({
   title,
   results,
-  emptyMessage = "No scholarship recommendations available yet.",
+  emptyMessage,
   secondary = false,
 }: {
   title: string;
   results: ScholarshipResult[];
-  emptyMessage?: string;
+  emptyMessage: string;
   secondary?: boolean;
 }) {
   return (
     <section className={`result-group${secondary ? " result-group-secondary" : ""}`}>
-      <h5>{title}</h5>
+      <div className="result-group-header">
+        <h4>{title}</h4>
+        <span>{results.length}</span>
+      </div>
       {results.length ? (
         <ul className="scholarship-list">
           {results.map((result) => (
@@ -550,11 +575,7 @@ function isRecommended(
     return false;
   }
 
-  if (["high_priority", "medium_priority"].includes(result.priority_label)) {
-    return true;
-  }
-
-  if (["possible_match", "strong_match"].includes(result.priority_label)) {
+  if (["high_priority", "medium_priority", "possible_match"].includes(result.priority_label)) {
     return true;
   }
 
@@ -617,14 +638,12 @@ function getSortRank(result: ScholarshipResult) {
     : Number.MAX_SAFE_INTEGER;
 }
 
-function createSteps(activeIndex: number, fileName: string | null): WorkflowStep[] {
+function createSteps(activeIndex: number): WorkflowStep[] {
   return PIPELINE.map((step, index) => ({
     id: step.id,
     label: step.label,
     status: getStatus(index, activeIndex),
-    count: index <= activeIndex || activeIndex >= PIPELINE.length ? step.count : undefined,
-    countLabel: step.countLabel,
-    message: getStepMessage(step, index, activeIndex, fileName),
+    message: getStepMessage(step, index, activeIndex),
   }));
 }
 
@@ -632,11 +651,9 @@ function getStatus(index: number, activeIndex: number): WorkflowStepStatus {
   if (activeIndex >= PIPELINE.length || index < activeIndex) {
     return "completed";
   }
-
   if (index === activeIndex) {
     return "active";
   }
-
   return "pending";
 }
 
@@ -644,19 +661,18 @@ function getStepMessage(
   step: PipelineTemplate,
   index: number,
   activeIndex: number,
-  fileName: string | null,
 ) {
   if (index > activeIndex && activeIndex < PIPELINE.length) {
     return "Waiting for previous step.";
   }
 
-  return step.log(fileName);
+  return step.log();
 }
 
-function createFailedSteps(activeIndex: number, fileName: string | null): WorkflowStep[] {
+function createFailedSteps(activeIndex: number): WorkflowStep[] {
   const failedIndex = Math.max(0, Math.min(activeIndex, PIPELINE.length - 1));
 
-  return createSteps(failedIndex, fileName).map((step, index) => {
+  return createSteps(failedIndex).map((step, index) => {
     if (index === failedIndex) {
       return {
         ...step,
@@ -669,22 +685,22 @@ function createFailedSteps(activeIndex: number, fileName: string | null): Workfl
   });
 }
 
+function formatMissingField(field: string) {
+  return field.replaceAll("_", " ");
+}
+
 function getReadableErrorMessage(error: unknown) {
   if (!(error instanceof Error)) {
     return "The backend request failed.";
   }
-
   if (error.message.includes("timed out")) {
     return "The backend took too long to respond.";
   }
-
   if (error.message.includes("invalid JSON")) {
     return "The backend returned an unreadable response.";
   }
-
   if (error.message.includes("unavailable")) {
     return "The backend is unavailable right now.";
   }
-
   return error.message;
 }

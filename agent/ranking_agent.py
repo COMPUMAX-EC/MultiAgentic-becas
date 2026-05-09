@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from config.settings import settings
+from pathlib import Path
+
+from database.repository import save_ranking_records
 from schemas.ranking_schema import RankingValidationError, build_ranking_result
 from utils.url_utils import first_useful_url
 
@@ -29,7 +31,8 @@ EXPIRED_OR_CLOSED_TERMS = (
 
 
 class RankingAgent:
-    def __init__(self) -> None:
+    def __init__(self, db_path: str | Path | None = None) -> None:
+        self.db_path = db_path
         self.ranking_errors: list[dict] = []
 
     def rank_recommendations(self, matching_results: list[dict]) -> list[dict]:
@@ -55,16 +58,15 @@ class RankingAgent:
 
         scored_results.sort(
             key=lambda result: (
-                result["final_score"],
-                result["compatibility_score"],
-                -self._priority_sort_value(result["priority_label"]),
+                -result["final_score"],
+                -result["compatibility_score"],
+                -result["source_trust_score"],
+                str(result.get("scholarship_name") or "").casefold(),
             ),
-            reverse=True,
         )
 
-        limited_results = scored_results[: settings.RANKING_MAX_RESULTS]
         ranked_results: list[dict] = []
-        for scored_result in limited_results:
+        for scored_result in scored_results:
             if not self._has_useful_link(scored_result):
                 continue
             ranking_result = build_ranking_result(
@@ -90,9 +92,29 @@ class RankingAgent:
                     "original_url": scored_result.get("original_url"),
                     "query_used": scored_result.get("query_used"),
                     "source_type": scored_result.get("source_type"),
+                    "source_validation_status": scored_result.get("source_validation_status"),
+                    "compatibility_points": scored_result.get("compatibility_points"),
+                    "max_possible_points": scored_result.get("max_possible_points"),
+                    "matched_profile_fields": scored_result.get("matched_profile_fields"),
+                    "missing_profile_fields": scored_result.get("missing_profile_fields"),
+                    "source_trust_score": scored_result.get("source_trust_score"),
+                    "deadline_status": scored_result.get("deadline_status"),
+                    "profile_signature": scored_result.get("profile_signature"),
                 }
             )
             ranked_results.append(ranking_result)
+
+        profile_signature = self._profile_signature(ranked_results)
+        if profile_signature:
+            try:
+                save_ranking_records(profile_signature, ranked_results, self.db_path)
+            except Exception as exc:  # pragma: no cover - persistence must not break ranking
+                self.ranking_errors.append(
+                    {
+                        "profile_signature": profile_signature,
+                        "error": str(exc),
+                    }
+                )
 
         return ranked_results
 
@@ -111,9 +133,19 @@ class RankingAgent:
         if not isinstance(score_breakdown, dict):
             score_breakdown = {}
 
-        final_score = compatibility_score
+        source_trust_score = self._source_trust_score(matching_result, score_breakdown)
+        deadline_score = self._deadline_score(matching_result)
+        link_quality_score = self._link_quality_score(matching_result)
+        extraction_confidence = self._extraction_confidence_score(matching_result)
+        final_score = round(
+            compatibility_score * 0.65
+            + source_trust_score * 0.20
+            + deadline_score * 0.05
+            + link_quality_score * 0.05
+            + extraction_confidence * 0.05
+        )
         ranking_reasons: list[str] = [
-            f"Base compatibility score is {compatibility_score}."
+            f"Compatibility contributes {compatibility_score} points on the normalized score."
         ]
 
         if not self._has_useful_link(matching_result):
@@ -121,23 +153,9 @@ class RankingAgent:
             eligibility_decision = "rejected"
             ranking_reasons.append("No useful traceable link is available.")
 
-        decision_adjustment = DECISION_ADJUSTMENTS.get(eligibility_decision, -20)
-        final_score += decision_adjustment
-        ranking_reasons.append(
-            self._describe_decision_adjustment(
-                eligibility_decision, decision_adjustment
-            )
-        )
-
-        source_adjustment = self._source_reliability_adjustment(score_breakdown)
-        final_score += source_adjustment
-        if source_adjustment > 0:
-            ranking_reasons.append("Source reliability improves ranking confidence.")
-
-        link_adjustment = self._link_adjustment(matching_result)
-        final_score += link_adjustment
-        if link_adjustment:
-            ranking_reasons.append("A useful display link improves traceability.")
+        ranking_reasons.append(f"Source trust score is {source_trust_score}.")
+        if link_quality_score:
+            ranking_reasons.append("A useful traceable display link is available.")
 
         risk_penalty = self._risk_penalty(risk_factors)
         if risk_penalty:
@@ -163,15 +181,26 @@ class RankingAgent:
             final_score = min(final_score, 29)
         if eligibility_decision == "weak_match":
             final_score = min(final_score, 44)
-        if eligibility_decision == "possible_match":
-            final_score = min(final_score, 59)
         if eligibility_decision == "insufficient_information":
-            final_score = min(final_score, 44)
+            final_score = min(final_score, 49)
         if eligibility_decision == "rejected":
             final_score = 0
 
         final_score = self._clamp_score(final_score)
         priority_label = self._priority_label(final_score, eligibility_decision)
+        compatibility_points = self._non_negative_int(
+            matching_result.get("compatibility_points")
+        )
+        max_possible_points = self._non_negative_int(
+            matching_result.get("max_possible_points")
+        )
+        matched_profile_fields = self._clean_list(
+            matching_result.get("matched_profile_fields")
+            or matching_result.get("matched_factors")
+        )
+        missing_profile_fields = self._clean_list(
+            matching_result.get("missing_profile_fields") or missing_requirements
+        )
 
         return {
             "scholarship_name": matching_result.get("scholarship_name"),
@@ -183,13 +212,21 @@ class RankingAgent:
             "original_url": matching_result.get("original_url"),
             "query_used": matching_result.get("query_used"),
             "source_type": matching_result.get("source_type"),
+            "source_validation_status": matching_result.get("source_validation_status"),
             "final_score": final_score,
             "compatibility_score": compatibility_score,
+            "compatibility_points": compatibility_points,
+            "max_possible_points": max_possible_points,
+            "matched_profile_fields": matched_profile_fields,
+            "missing_profile_fields": missing_profile_fields,
+            "source_trust_score": source_trust_score,
             "eligibility_decision": eligibility_decision,
             "priority_label": priority_label,
             "ranking_reasons": ranking_reasons,
             "risk_factors": risk_factors,
             "missing_requirements": missing_requirements,
+            "deadline_status": matching_result.get("deadline_status"),
+            "profile_signature": matching_result.get("profile_signature"),
             "recommendation_summary": self._recommendation_summary(
                 priority_label,
                 final_score,
@@ -197,7 +234,13 @@ class RankingAgent:
                 risk_factors,
                 missing_requirements,
             ),
-            "score_breakdown": score_breakdown,
+            "score_breakdown": {
+                **score_breakdown,
+                "source_trust_score": source_trust_score,
+                "deadline_status_score": deadline_score,
+                "link_quality_score": link_quality_score,
+                "extraction_confidence_score": extraction_confidence,
+            },
         }
 
     def _describe_decision_adjustment(
@@ -208,6 +251,72 @@ class RankingAgent:
         if adjustment < 0:
             return f"{eligibility_decision} reduces the score by {abs(adjustment)} points."
         return f"{eligibility_decision} keeps the compatibility score unchanged."
+
+    def _source_trust_score(self, matching_result: dict, score_breakdown: dict) -> int:
+        explicit_score = matching_result.get("source_trust_score")
+        if explicit_score is not None:
+            return self._clamp_score(explicit_score)
+
+        validation_status = str(
+            matching_result.get("source_validation_status") or ""
+        ).strip().casefold()
+        source_type = str(matching_result.get("source_type") or "").strip().casefold()
+        if validation_status == "rejected":
+            return 0
+        if validation_status == "accepted_with_warning" or source_type.startswith("verified_"):
+            return 70
+        trusted_types = {
+            "university",
+            "government",
+            "embassy",
+            "international_organization",
+            "recognized_foundation",
+            "official_company",
+            "professional_association",
+            "official_pdf",
+            "institution",
+            "foundation",
+            "company",
+        }
+        if validation_status == "accepted" or source_type in trusted_types:
+            return 100
+        if first_useful_url(matching_result.get("display_link"), matching_result.get("source_url")):
+            return 40
+        return self._clamp_score(score_breakdown.get("source_reliability_score", 0) * 20)
+
+    def _deadline_score(self, matching_result: dict) -> int:
+        if self._has_expired_or_closed_signal(matching_result):
+            return 0
+        status = str(matching_result.get("deadline_status") or "").strip().casefold()
+        deadline = str(matching_result.get("deadline") or "").strip().casefold()
+        if not status and not deadline:
+            return 50
+        if status in {"unknown", "not specified", "unverified"}:
+            return 50
+        return 100
+
+    def _link_quality_score(self, matching_result: dict) -> int:
+        if first_useful_url(matching_result.get("official_link")):
+            return 100
+        if first_useful_url(matching_result.get("application_url")):
+            return 90
+        if first_useful_url(matching_result.get("source_url"), matching_result.get("display_link")):
+            return 75
+        if first_useful_url(matching_result.get("pdf_url")):
+            return 70
+        return 0
+
+    def _extraction_confidence_score(self, matching_result: dict) -> int:
+        if matching_result.get("extraction_confidence") is None:
+            return 70
+        return self._clamp_score(matching_result.get("extraction_confidence"))
+
+    def _profile_signature(self, ranked_results: list[dict]) -> str | None:
+        for result in ranked_results:
+            signature = str(result.get("profile_signature") or "").strip()
+            if signature:
+                return signature
+        return None
 
     def _source_reliability_adjustment(self, score_breakdown: dict) -> int:
         source_score = self._clamp_score(
@@ -321,6 +430,9 @@ class RankingAgent:
         text_parts = [
             matching_result.get("eligibility_decision"),
             matching_result.get("recommendation_reason"),
+            matching_result.get("deadline_status"),
+            matching_result.get("application_status"),
+            matching_result.get("deadline"),
             " ".join(self._clean_list(matching_result.get("risk_factors"))),
             " ".join(self._clean_list(matching_result.get("missing_requirements"))),
         ]
@@ -349,3 +461,10 @@ class RankingAgent:
         except (TypeError, ValueError):
             score = 0
         return max(0, min(100, score))
+
+    def _non_negative_int(self, value: object) -> int:
+        try:
+            int_value = int(value)
+        except (TypeError, ValueError):
+            return 0
+        return max(0, int_value)

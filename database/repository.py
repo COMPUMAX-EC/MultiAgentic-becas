@@ -137,6 +137,99 @@ def save_sources(sources: list[dict], db_path: str | Path | None = None) -> int:
         close_connection(connection)
 
 
+def save_untrusted_source(
+    url: str | None,
+    domain: str | None,
+    rejection_reason: str,
+    source_type: str,
+    db_path: str | Path | None = None,
+) -> None:
+    init_database(db_path)
+    connection = get_connection(db_path)
+    try:
+        now = _now_iso()
+        cleaned_url = str(url or "").strip() or None
+        cleaned_domain = str(domain or "").strip().lower() or None
+        if cleaned_url is None and cleaned_domain is None:
+            return
+
+        existing = connection.execute(
+            """
+            SELECT id FROM untrusted_sources
+            WHERE (? IS NOT NULL AND url = ?)
+               OR (? IS NOT NULL AND domain = ?)
+            LIMIT 1
+            """,
+            (cleaned_url, cleaned_url, cleaned_domain, cleaned_domain),
+        ).fetchone()
+
+        if existing is None:
+            connection.execute(
+                """
+                INSERT INTO untrusted_sources (
+                    url, domain, rejection_reason, source_type,
+                    first_seen_at, last_checked_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    cleaned_url,
+                    cleaned_domain,
+                    rejection_reason,
+                    source_type,
+                    now,
+                    now,
+                ),
+            )
+        else:
+            connection.execute(
+                """
+                UPDATE untrusted_sources
+                SET rejection_reason = ?, source_type = ?, last_checked_at = ?
+                WHERE id = ?
+                """,
+                (rejection_reason, source_type, now, existing["id"]),
+            )
+        connection.commit()
+    finally:
+        close_connection(connection)
+
+
+def get_untrusted_source_match(
+    url: str | None,
+    domain: str | None,
+    db_path: str | Path | None = None,
+) -> dict | None:
+    init_database(db_path)
+    connection = get_connection(db_path)
+    try:
+        cleaned_url = str(url or "").strip() or None
+        cleaned_domain = str(domain or "").strip().lower() or None
+        if cleaned_url is None and cleaned_domain is None:
+            return None
+
+        row = connection.execute(
+            """
+            SELECT * FROM untrusted_sources
+            WHERE (? IS NOT NULL AND url = ?)
+               OR (? IS NOT NULL AND domain = ?)
+            LIMIT 1
+            """,
+            (cleaned_url, cleaned_url, cleaned_domain, cleaned_domain),
+        ).fetchone()
+        if row is None:
+            return None
+
+        now = _now_iso()
+        connection.execute(
+            "UPDATE untrusted_sources SET last_checked_at = ? WHERE id = ?",
+            (now, row["id"]),
+        )
+        connection.commit()
+        return dict(row)
+    finally:
+        close_connection(connection)
+
+
 def save_scholarships(
     scholarships: list[dict], db_path: str | Path | None = None
 ) -> dict:
@@ -256,6 +349,112 @@ def save_extraction_run(
             (profile_hash, source_url, status, scholarships_found, error, _now_iso()),
         )
         connection.commit()
+    finally:
+        close_connection(connection)
+
+
+def save_ranking_records(
+    profile_signature: str,
+    ranked_results: list[dict],
+    db_path: str | Path | None = None,
+) -> int:
+    init_database(db_path)
+    connection = get_connection(db_path)
+    try:
+        saved_count = 0
+        now = _now_iso()
+        for result in ranked_results:
+            scholarship_name = result.get("scholarship_name")
+            source_url = result.get("source_url") or result.get("display_link")
+            if not scholarship_name or not source_url:
+                continue
+            scholarship_key = build_scholarship_hash(
+                str(scholarship_name),
+                str(source_url),
+            )
+            payload = (
+                profile_signature,
+                scholarship_key,
+                scholarship_name,
+                result.get("compatibility_score"),
+                result.get("compatibility_points"),
+                result.get("max_possible_points"),
+                json.dumps(result.get("matched_profile_fields", []), ensure_ascii=False),
+                json.dumps(result.get("missing_profile_fields", []), ensure_ascii=False),
+                result.get("source_trust_score"),
+                result.get("deadline_status"),
+                result.get("display_link"),
+                result.get("source_url"),
+                result.get("official_link"),
+                result.get("application_url"),
+                result.get("pdf_url"),
+                result.get("final_score"),
+                result.get("priority_label"),
+                now,
+            )
+            connection.execute(
+                """
+                INSERT INTO ranking_records (
+                    profile_signature, scholarship_key, scholarship_name,
+                    compatibility_score, compatibility_points, max_possible_points,
+                    matched_profile_fields_json, missing_profile_fields_json,
+                    source_trust_score, deadline_status, display_link, source_url,
+                    official_link, application_url, pdf_url, final_score,
+                    priority_label, last_checked_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(profile_signature, scholarship_key) DO UPDATE SET
+                    scholarship_name = excluded.scholarship_name,
+                    compatibility_score = excluded.compatibility_score,
+                    compatibility_points = excluded.compatibility_points,
+                    max_possible_points = excluded.max_possible_points,
+                    matched_profile_fields_json = excluded.matched_profile_fields_json,
+                    missing_profile_fields_json = excluded.missing_profile_fields_json,
+                    source_trust_score = excluded.source_trust_score,
+                    deadline_status = excluded.deadline_status,
+                    display_link = excluded.display_link,
+                    source_url = excluded.source_url,
+                    official_link = excluded.official_link,
+                    application_url = excluded.application_url,
+                    pdf_url = excluded.pdf_url,
+                    final_score = excluded.final_score,
+                    priority_label = excluded.priority_label,
+                    last_checked_at = excluded.last_checked_at
+                """,
+                payload,
+            )
+            saved_count += 1
+        connection.commit()
+        return saved_count
+    finally:
+        close_connection(connection)
+
+
+def list_ranking_records(
+    profile_signature: str,
+    db_path: str | Path | None = None,
+) -> list[dict]:
+    init_database(db_path)
+    connection = get_connection(db_path)
+    try:
+        rows = connection.execute(
+            """
+            SELECT * FROM ranking_records
+            WHERE profile_signature = ?
+            ORDER BY final_score DESC, compatibility_score DESC, source_trust_score DESC,
+                     scholarship_name ASC
+            """,
+            (profile_signature,),
+        ).fetchall()
+        records: list[dict] = []
+        for row in rows:
+            record = dict(row)
+            for key in ("matched_profile_fields_json", "missing_profile_fields_json"):
+                try:
+                    record[key.removesuffix("_json")] = json.loads(record.get(key) or "[]")
+                except json.JSONDecodeError:
+                    record[key.removesuffix("_json")] = []
+            records.append(record)
+        return records
     finally:
         close_connection(connection)
 

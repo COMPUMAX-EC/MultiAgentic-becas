@@ -26,6 +26,8 @@ class Settings:
     SEARCH_MAX_QUERIES: int
     SEARCH_MAX_RESULTS_PER_QUERY: int
     SEARCH_MAX_GLOBAL_CANDIDATES: int
+    MIN_RECOMMENDED_RESULTS_BEFORE_EXPANSION: int
+    MAX_EXPANSION_ROUNDS: int
     SEARCH_TIMEOUT_SECONDS: int
     SEARCH_CACHE_ENABLED: bool
     SOURCE_VALIDATION_USE_LLM: bool
@@ -87,7 +89,7 @@ settings = Settings(
     ).strip().lower(),
     SEARCH_PROVIDER=os.getenv("SEARCH_PROVIDER", "duckduckgo"),
     SEARCH_MAX_QUERIES=int(
-        os.getenv("SEARCH_MAX_QUERIES", os.getenv("MAX_SEARCH_QUERIES", "20"))
+        os.getenv("SEARCH_MAX_QUERIES", os.getenv("MAX_SEARCH_QUERIES", "30"))
     ),
     SEARCH_MAX_RESULTS_PER_QUERY=int(
         os.getenv(
@@ -98,9 +100,13 @@ settings = Settings(
     SEARCH_MAX_GLOBAL_CANDIDATES=int(
         os.getenv(
             "SEARCH_MAX_GLOBAL_CANDIDATES",
-            os.getenv("MAX_GLOBAL_CANDIDATES", "150"),
+            os.getenv("MAX_GLOBAL_CANDIDATES", "300"),
         )
     ),
+    MIN_RECOMMENDED_RESULTS_BEFORE_EXPANSION=int(
+        os.getenv("MIN_RECOMMENDED_RESULTS_BEFORE_EXPANSION", "5")
+    ),
+    MAX_EXPANSION_ROUNDS=int(os.getenv("MAX_EXPANSION_ROUNDS", "2")),
     SEARCH_TIMEOUT_SECONDS=int(os.getenv("SEARCH_TIMEOUT_SECONDS", "20")),
     SEARCH_CACHE_ENABLED=os.getenv("SEARCH_CACHE_ENABLED", "true").strip().lower()
     == "true",

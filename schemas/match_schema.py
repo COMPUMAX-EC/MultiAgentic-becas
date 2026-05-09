@@ -78,6 +78,25 @@ def build_match_result(
     }
 
 
+def attach_point_fields(match_result: dict, evaluation: dict) -> dict:
+    match_result["compatibility_points"] = _non_negative_int(
+        evaluation.get("compatibility_points")
+    )
+    match_result["max_possible_points"] = _non_negative_int(
+        evaluation.get("max_possible_points")
+    )
+    match_result["matched_profile_fields"] = _clean_list(
+        evaluation.get("matched_profile_fields")
+    )
+    match_result["missing_profile_fields"] = _clean_list(
+        evaluation.get("missing_profile_fields")
+    )
+    match_result["source_trust_score"] = _clamp_score(
+        evaluation.get("source_trust_score")
+    )
+    return match_result
+
+
 def _clean_text(value: object) -> str | None:
     if not isinstance(value, str):
         return None
@@ -110,3 +129,11 @@ def _clamp_score(value: object) -> int:
     except (TypeError, ValueError):
         score = 0
     return max(0, min(100, score))
+
+
+def _non_negative_int(value: object) -> int:
+    try:
+        int_value = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, int_value)

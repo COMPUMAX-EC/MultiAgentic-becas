@@ -39,6 +39,19 @@ CREATE_TABLE_STATEMENTS = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS untrusted_sources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT,
+        domain TEXT,
+        rejection_reason TEXT NOT NULL,
+        source_type TEXT,
+        first_seen_at TEXT NOT NULL,
+        last_checked_at TEXT NOT NULL,
+        UNIQUE(url),
+        UNIQUE(domain)
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS scholarships (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         scholarship_hash TEXT NOT NULL UNIQUE,
@@ -72,6 +85,30 @@ CREATE_TABLE_STATEMENTS = (
         scholarships_found INTEGER NOT NULL,
         error TEXT,
         created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ranking_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        profile_signature TEXT NOT NULL,
+        scholarship_key TEXT NOT NULL,
+        scholarship_name TEXT,
+        compatibility_score INTEGER,
+        compatibility_points INTEGER,
+        max_possible_points INTEGER,
+        matched_profile_fields_json TEXT,
+        missing_profile_fields_json TEXT,
+        source_trust_score INTEGER,
+        deadline_status TEXT,
+        display_link TEXT,
+        source_url TEXT,
+        official_link TEXT,
+        application_url TEXT,
+        pdf_url TEXT,
+        final_score INTEGER,
+        priority_label TEXT,
+        last_checked_at TEXT NOT NULL,
+        UNIQUE(profile_signature, scholarship_key)
     )
     """,
 )

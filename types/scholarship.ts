@@ -10,6 +10,7 @@ export type ScholarshipPriorityLabel =
 export type WorkflowStepStatus =
   | "completed"
   | "active"
+  | "running"
   | "pending"
   | "failed"
   | "skipped";
@@ -27,6 +28,9 @@ export type PipelineMetrics = {
   generated_queries_count: number;
   sources_found_count: number;
   sources_deduplicated_count: number;
+  expansion_rounds_used: number;
+  untrusted_sources_skipped_count: number;
+  secondary_guidance_sources_count: number;
   sources_accepted_count: number;
   sources_accepted_with_warning_count: number;
   sources_rejected_count: number;
@@ -42,13 +46,17 @@ export type PipelineMetrics = {
 };
 
 export type RejectionSummary = {
+  duplicate: number;
+  known_untrusted_source: number;
   non_scholarship_page: number;
   untrusted_source: number;
+  validation_failed: number;
   expired_or_closed: number;
   no_useful_link: number;
-  duplicate: number;
   read_failed: number;
   extraction_failed: number;
+  profile_missing_required_fields: number;
+  other: number;
 };
 
 export type ScholarshipResult = {
@@ -59,12 +67,17 @@ export type ScholarshipResult = {
   country: string;
   final_score: number;
   compatibility_score: number;
+  compatibility_points?: number;
+  max_possible_points?: number;
+  source_trust_score?: number;
   eligibility_decision: string;
   priority_label: ScholarshipPriorityLabel;
   recommendation_summary: string;
   ranking_reasons: string[];
   risk_factors: string[];
   missing_requirements: string[];
+  matched_profile_fields?: string[];
+  missing_profile_fields?: string[];
   source_url: string;
   official_link?: string;
   application_url?: string;

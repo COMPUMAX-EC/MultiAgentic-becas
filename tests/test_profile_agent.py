@@ -149,7 +149,7 @@ class ProfileAgentTests(unittest.TestCase):
         self.assertIn("Canada", normalized_profile["target_countries"])
         self.assertEqual(normalized_profile["scholarship_type"], "Full funding")
         self.assertIn(
-            {"language": "Spanish", "level": None, "display": "Spanish"},
+            {"language": "Spanish", "level": "Native", "display": "Spanish Native"},
             normalized_profile["languages"],
         )
         self.assertIn(
@@ -172,6 +172,201 @@ class ProfileAgentTests(unittest.TestCase):
                 for warning in normalized_profile["normalization_warnings"]
             )
         )
+
+    def test_valid_spanish_profile_passes_minimum_validation_and_builds_intent(self) -> None:
+        raw_profile = (
+            "Soy colombiano, hablo español nativo e inglés B2, busco beca completa "
+            "para maestría en inteligencia artificial en Canadá."
+        )
+
+        normalized_profile = self.agent.prepare_profile(infer_profile_from_text(raw_profile))
+        validation = self.agent.validate_minimum_required_input(normalized_profile)
+        search_intent = self.agent.build_search_intent(normalized_profile)
+
+        self.assertEqual(validation["status"], "ready")
+        self.assertEqual(normalized_profile["country_of_origin"], "Colombia")
+        self.assertEqual(search_intent["country_or_nationality"], "Colombia")
+        self.assertIn(
+            {"language": "Spanish", "level": "Native", "display": "Spanish Native"},
+            search_intent["languages"],
+        )
+        self.assertIn(
+            {"language": "English", "level": "B2", "display": "English B2"},
+            search_intent["languages"],
+        )
+        self.assertEqual(search_intent["scholarship_type"], "Full funding")
+        self.assertEqual(search_intent["academic_level"], "master")
+        self.assertEqual(search_intent["field_of_study"], "Computer Science")
+        self.assertEqual(search_intent["specialization"], "Artificial Intelligence")
+        self.assertEqual(search_intent["target_countries"], ["Canada"])
+        self.assertEqual(search_intent["search_specificity"], "specific")
+        self.assertIn("search_signature", search_intent)
+
+    def test_typo_heavy_profile_passes_minimum_validation(self) -> None:
+        raw_profile = (
+            "soy colmbiano hablo ingles b2 y español busco beca parcial "
+            "para tecnologia"
+        )
+
+        normalized_profile = self.agent.prepare_profile(infer_profile_from_text(raw_profile))
+        validation = self.agent.validate_minimum_required_input(normalized_profile)
+        search_intent = self.agent.build_search_intent(normalized_profile)
+
+        self.assertEqual(validation["status"], "ready")
+        self.assertEqual(search_intent["country_or_nationality"], "Colombia")
+        self.assertIn(
+            {"language": "English", "level": "B2", "display": "English B2"},
+            search_intent["languages"],
+        )
+        self.assertIn(
+            {"language": "Spanish", "level": "Native", "display": "Spanish Native"},
+            search_intent["languages"],
+        )
+        self.assertEqual(search_intent["scholarship_type"], "Partial funding")
+        self.assertEqual(search_intent["field_of_study"], "Technology")
+
+    def test_missing_scholarship_type_fails_minimum_validation(self) -> None:
+        raw_profile = (
+            "Soy ecuatoriano, hablo español e inglés, quiero estudiar computer science."
+        )
+
+        normalized_profile = self.agent.prepare_profile(infer_profile_from_text(raw_profile))
+        validation = self.agent.validate_minimum_required_input(normalized_profile)
+
+        self.assertEqual(validation["status"], "needs_more_information")
+        self.assertIn("scholarship_type", validation["missing_required_fields"])
+
+    def test_ecuadorian_written_profile_with_combined_funding_passes(self) -> None:
+        raw_profile = (
+            "I am Ecuadorian and I am studying Information Technology. I speak "
+            "Spanish as my native language and English at a B1 level. I am "
+            "interested in Cybersecurity, Cloud Computing, Programming, and "
+            "Software Development. I am looking for partial or full scholarships "
+            "for undergraduate studies, preferably in Spain, Canada, Chile, or "
+            "the United States. My budget is limited, and I can contribute up to "
+            "5,000 USD per year. I prefer hybrid or on-campus programs."
+        )
+
+        normalized_profile = self.agent.prepare_profile(infer_profile_from_text(raw_profile))
+        validation = self.agent.validate_minimum_required_input(normalized_profile)
+        search_intent = self.agent.build_search_intent(normalized_profile)
+
+        self.assertEqual(validation["status"], "ready")
+        self.assertEqual(search_intent["country_or_nationality"], "Ecuador")
+        self.assertEqual(search_intent["scholarship_type"], "Full or partial funding")
+        self.assertEqual(search_intent["academic_level"], "undergraduate")
+        self.assertEqual(search_intent["field_of_study"], "Information Technology")
+        self.assertEqual(
+            set(search_intent["target_countries"]),
+            {"Spain", "Canada", "Chile", "United States"},
+        )
+        self.assertEqual(search_intent["budget"]["max_personal_contribution"], 5000)
+        self.assertIn(search_intent["modality"], {"Hybrid", "On-campus"})
+        self.assertIn(
+            {"language": "Spanish", "level": "Native", "display": "Spanish Native"},
+            search_intent["languages"],
+        )
+        self.assertIn(
+            {"language": "English", "level": "B1", "display": "English B1"},
+            search_intent["languages"],
+        )
+
+    def test_short_ecuadorian_profile_with_partial_or_full_passes(self) -> None:
+        raw_profile = (
+            "I am Ecuadorian and I speak Spanish and English B1. I am looking "
+            "for partial or full scholarships for undergraduate studies in "
+            "Information Technology."
+        )
+
+        normalized_profile = self.agent.prepare_profile(infer_profile_from_text(raw_profile))
+        validation = self.agent.validate_minimum_required_input(normalized_profile)
+        search_intent = self.agent.build_search_intent(normalized_profile)
+
+        self.assertEqual(validation["status"], "ready")
+        self.assertEqual(search_intent["scholarship_type"], "Full or partial funding")
+        self.assertEqual(search_intent["academic_level"], "undergraduate")
+        self.assertEqual(search_intent["field_of_study"], "Information Technology")
+
+    def test_full_or_partial_scholarships_are_detected(self) -> None:
+        raw_profile = (
+            "I am Ecuadorian and I speak Spanish and English B1. I am looking "
+            "for full or partial scholarships for undergraduate studies in "
+            "Information Technology."
+        )
+
+        normalized_profile = self.agent.prepare_profile(infer_profile_from_text(raw_profile))
+        validation = self.agent.validate_minimum_required_input(normalized_profile)
+
+        self.assertEqual(validation["status"], "ready")
+        self.assertEqual(
+            normalized_profile["scholarship_type"],
+            "Full or partial funding",
+        )
+
+    def test_spanish_combined_scholarship_type_is_detected(self) -> None:
+        raw_profile = (
+            "Soy ecuatoriano, hablo espaÃ±ol e inglÃ©s B1. Busco becas completas "
+            "o parciales para pregrado en tecnologÃ­a de la informaciÃ³n."
+        )
+
+        normalized_profile = self.agent.prepare_profile(infer_profile_from_text(raw_profile))
+        validation = self.agent.validate_minimum_required_input(normalized_profile)
+        search_intent = self.agent.build_search_intent(normalized_profile)
+
+        self.assertEqual(validation["status"], "ready")
+        self.assertEqual(search_intent["scholarship_type"], "Full or partial funding")
+        self.assertEqual(search_intent["field_of_study"], "Information Technology")
+
+    def test_typo_spanish_combined_scholarship_type_passes(self) -> None:
+        raw_profile = (
+            "soy ecuatoriano hablo espanol e ingles b1 busco becas parciales "
+            "o completas para pregrado en tecnologia"
+        )
+
+        normalized_profile = self.agent.prepare_profile(infer_profile_from_text(raw_profile))
+        validation = self.agent.validate_minimum_required_input(normalized_profile)
+        search_intent = self.agent.build_search_intent(normalized_profile)
+
+        self.assertEqual(validation["status"], "ready")
+        self.assertEqual(search_intent["scholarship_type"], "Full or partial funding")
+        self.assertEqual(search_intent["field_of_study"], "Technology")
+
+    def test_ecuadorian_profile_without_scholarship_type_still_fails(self) -> None:
+        raw_profile = "Soy ecuatoriano, hablo espaÃ±ol e inglÃ©s B1 y estudio tecnologÃ­a."
+
+        normalized_profile = self.agent.prepare_profile(infer_profile_from_text(raw_profile))
+        validation = self.agent.validate_minimum_required_input(normalized_profile)
+
+        self.assertEqual(validation["status"], "needs_more_information")
+        self.assertIn("scholarship_type", validation["missing_required_fields"])
+
+    def test_no_modality_is_omitted_from_search_intent_and_signature(self) -> None:
+        raw_profile = (
+            "Soy colombiano, hablo español e inglés B2, busco beca completa "
+            "para maestría en inteligencia artificial."
+        )
+
+        normalized_profile = self.agent.prepare_profile(infer_profile_from_text(raw_profile))
+        search_intent = self.agent.build_search_intent(normalized_profile)
+
+        self.assertNotIn("modality", search_intent)
+        self.assertNotIn("modality", search_intent["search_signature"]["payload"])
+
+    def test_demo_defaults_are_not_injected_into_search_intent(self) -> None:
+        raw_profile = (
+            "Soy peruano, hablo inglés B2 y español, busco beca parcial "
+            "para tecnología."
+        )
+
+        normalized_profile = self.agent.prepare_profile(infer_profile_from_text(raw_profile))
+        validation = self.agent.validate_minimum_required_input(normalized_profile)
+        search_intent = self.agent.build_search_intent(normalized_profile)
+
+        self.assertEqual(validation["status"], "ready")
+        self.assertNotIn("target_countries", search_intent)
+        self.assertNotIn("Canada", search_intent.get("target_countries", []))
+        self.assertNotIn("Germany", search_intent.get("target_countries", []))
+        self.assertNotIn("Netherlands", search_intent.get("target_countries", []))
 
 
 if __name__ == "__main__":

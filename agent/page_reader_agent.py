@@ -16,9 +16,15 @@ class PageReaderAgent:
 
     def read_page_source(self, source: dict) -> dict:
         decision = source.get("decision")
+        validation_status = source.get("validation_status") or source.get(
+            "acceptance_status"
+        )
         url = str(source.get("url") or "").strip()
 
-        if decision not in settings.PAGE_ALLOWED_DECISIONS:
+        if decision not in settings.PAGE_ALLOWED_DECISIONS and validation_status not in {
+            "accepted",
+            "accepted_with_warning",
+        }:
             return build_page_result(
                 source,
                 "skipped_rejected_source",

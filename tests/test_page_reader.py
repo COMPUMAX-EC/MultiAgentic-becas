@@ -71,6 +71,66 @@ class PageReaderTests(unittest.TestCase):
         self.assertEqual(result["cleaned_text"], "Cached scholarship text")
         self.assertEqual(result["cache_path"], str(cache_path))
 
+    @patch("agent.page_reader_agent.read_page")
+    def test_accepted_with_warning_source_is_read_and_metadata_preserved(
+        self,
+        mock_read_page,
+    ) -> None:
+        mock_read_page.return_value = "<html>Scholarship funding page</html>"
+        source = {
+            "title": "Verified scholarship article",
+            "url": "https://news.example.org/scholarship",
+            "source_url": "https://news.example.org/scholarship",
+            "original_url": "https://news.example.org/scholarship?ref=search",
+            "source_type": "verified_news",
+            "decision": "review",
+            "acceptance_status": "accepted_with_warning",
+            "validation_status": "accepted_with_warning",
+            "validation_reason": "Verified informational source.",
+            "warnings": ["Verified informational source."],
+            "query_used": "verified scholarship news",
+            "query_family": "verified_secondary_source",
+            "source_family": "verified_secondary_source",
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_service = PageCacheService(cache_dir=Path(temp_dir))
+            result = PageReaderAgent(cache_service=cache_service).read_page_source(source)
+
+        self.assertEqual(result["status"], "read_success")
+        self.assertEqual(result["read_status"], "read_success")
+        self.assertEqual(result["source_url"], source["source_url"])
+        self.assertEqual(result["original_url"], source["original_url"])
+        self.assertEqual(result["validation_status"], "accepted_with_warning")
+        self.assertEqual(result["validation_reason"], "Verified informational source.")
+        self.assertEqual(result["query_family"], "verified_secondary_source")
+        self.assertEqual(result["source_family"], "verified_secondary_source")
+        self.assertEqual(result["warnings"], ["Verified informational source."])
+
+    @patch("agent.page_reader_agent.read_page")
+    def test_read_failure_records_error_and_preserves_source_url(
+        self,
+        mock_read_page,
+    ) -> None:
+        mock_read_page.side_effect = PageReadError("timeout")
+        source = {
+            "title": "Scholarship page",
+            "url": "https://example.edu/scholarship",
+            "source_url": "https://example.edu/scholarship",
+            "source_type": "university",
+            "decision": "accept",
+            "validation_status": "accepted",
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_service = PageCacheService(cache_dir=Path(temp_dir))
+            result = PageReaderAgent(cache_service=cache_service).read_page_source(source)
+
+        self.assertEqual(result["status"], "read_failed")
+        self.assertEqual(result["read_status"], "read_failed")
+        self.assertEqual(result["read_error"], "timeout")
+        self.assertEqual(result["source_url"], source["source_url"])
+
 
 if __name__ == "__main__":
     unittest.main()

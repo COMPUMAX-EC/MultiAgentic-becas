@@ -82,6 +82,8 @@ def normalize_useful_url(value: object) -> str:
     lowered_url = url.casefold()
     if lowered_url.startswith(("javascript:", "mailto:", "file:", "data:")):
         return ""
+    if len(url) >= 3 and url[1] == ":" and url[2] in {"\\", "/"}:
+        return ""
     if url.startswith(("/", "\\", ".")):
         return ""
     if "://" not in url and (url.startswith("www.") or "." in url.split("/", 1)[0]):
@@ -93,6 +95,8 @@ def normalize_useful_url(value: object) -> str:
         return ""
 
     if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+        return ""
+    if "\\" in parsed_url.netloc:
         return ""
     if any(character.isspace() for character in parsed_url.netloc):
         return ""

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,12 +59,16 @@ LESS_RECOMMENDED_DISPLAY_LIMIT = 10
 REQUIRED_SEARCH_STEP_NAMES = (
     "Reading profile input",
     "Normalizing profile",
-    "Generating global scholarship search queries",
-    "Searching global scholarship sources",
-    "Validating official and verified sources",
+    "Building search intent",
+    "Generating global scholarship queries",
+    "Searching global sources",
+    "Deduplicating candidates",
+    "Validating trusted sources",
     "Reading scholarship pages",
     "Extracting scholarship data",
+    "Resolving useful links",
     "Matching scholarships with profile",
+    "Scoring compatibility",
     "Ranking recommendations",
     "Preparing final results",
 )
@@ -73,9 +77,13 @@ SOURCE_POLICY_ALLOWED_TYPES = {
     "institute",
     "institution",
     "government",
+    "embassy",
     "organization",
     "foundation",
+    "recognized_foundation",
     "company",
+    "official_company",
+    "professional_association",
     "international_organization",
     "official_pdf",
     "verified_news",
@@ -141,23 +149,13 @@ async def search_scholarships(request: Request):
         )
     ]
 
-    if parsed_request["pdf_filename"]:
-        workflow_steps.append(
-            build_workflow_step(
-                "Reading uploaded CV PDF",
-                "skipped",
-                1,
-                "PDF received but parsing is not connected yet.",
-            )
-        )
-
     try:
         normalized_profile = prepare_search_profile(
             parsed_request["received_profile"],
             parsed_request["raw_profile_text"],
             parsed_request["scholarship_goal"],
         )
-        search_signature = build_search_signature(normalized_profile)
+        normalized_profile["raw_profile_text"] = parsed_request["raw_profile_text"]
         workflow_steps.append(
             build_workflow_step(
                 "Normalizing profile",
@@ -172,6 +170,45 @@ async def search_scholarships(request: Request):
             detail=f"Profile could not be normalized: {exc}",
         ) from exc
 
+    minimum_input_validation = PROFILE_AGENT.validate_minimum_required_input(
+        normalized_profile
+    )
+    if minimum_input_validation["status"] == "needs_more_information":
+        workflow_steps.append(
+            build_workflow_step(
+                "Validating minimum required input",
+                "failed",
+                len(minimum_input_validation["missing_required_fields"]),
+                minimum_input_validation["message"],
+            )
+        )
+        return build_needs_more_information_response(
+            normalized_profile,
+            minimum_input_validation,
+            parsed_request,
+            workflow_steps,
+        )
+
+    search_intent = PROFILE_AGENT.build_search_intent(normalized_profile)
+    normalized_profile["search_intent"] = search_intent
+    search_signature = build_search_signature(search_intent)
+    workflow_steps.append(
+        build_workflow_step(
+            "Building search intent",
+            "completed",
+            len([key for key in search_intent if key not in {"warnings", "missing_optional_fields"}]),
+            "Built a profile-dependent search intent.",
+        )
+    )
+    workflow_steps.append(
+        build_workflow_step(
+            "Validating minimum required input",
+            "completed",
+            0,
+            "Minimum required scholarship search information is present.",
+        )
+    )
+
     pipeline_payload = run_live_search_pipeline(normalized_profile, workflow_steps)
     response = normalize_frontend_response(
         pipeline_payload,
@@ -182,8 +219,9 @@ async def search_scholarships(request: Request):
     response["normalized_profile"] = normalized_profile
     response["input_type"] = parsed_request["input_type"]
     response["raw_profile_text"] = parsed_request["raw_profile_text"]
-    response["pdf_filename"] = parsed_request["pdf_filename"]
     response["search_signature"] = search_signature
+    response["search_intent"] = search_intent
+    response["minimum_input_validation"] = minimum_input_validation
     response["filtering_layers"] = build_filtering_layers(normalized_profile)
     response["metrics"] = normalize_metrics(pipeline_payload.get("metrics"))
     response["rejection_summary"] = normalize_rejection_summary(
@@ -195,12 +233,6 @@ async def search_scholarships(request: Request):
 
 
 async def parse_search_request(request: Request):
-    content_type = request.headers.get("content-type", "")
-    content_type_lower = content_type.lower()
-
-    if "multipart/form-data" in content_type_lower:
-        return await parse_multipart_search_request(request, content_type)
-
     return await parse_json_search_request(request)
 
 
@@ -210,7 +242,7 @@ async def parse_json_search_request(request: Request):
     except Exception as exc:
         raise HTTPException(
             status_code=400,
-            detail="Request body must be valid JSON or multipart/form-data.",
+            detail="Request body must be valid JSON with raw_profile_text.",
         ) from exc
 
     if not isinstance(payload, dict):
@@ -229,7 +261,6 @@ async def parse_json_search_request(request: Request):
             "received_profile": profile,
             "raw_profile_text": raw_profile_text,
             "scholarship_goal": scholarship_goal,
-            "pdf_filename": None,
         }
 
     if raw_profile_text:
@@ -238,43 +269,14 @@ async def parse_json_search_request(request: Request):
             "received_profile": None,
             "raw_profile_text": raw_profile_text,
             "scholarship_goal": scholarship_goal,
-            "pdf_filename": None,
         }
 
-    raise HTTPException(
-        status_code=400,
-        detail="Provide either a non-empty profile object or raw_profile_text.",
-    )
-
-
-async def parse_multipart_search_request(request: Request, content_type: str):
-    try:
-        body = await request.body()
-        form, files = parse_multipart_body(body, content_type)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="Multipart form data could not be read.",
-        ) from exc
-
-    raw_profile_text = normalize_optional_text(form.get("raw_profile_text"))
-    scholarship_goal = normalize_optional_text(form.get("scholarship_goal"))
-    pdf_filename = files.get("cv_pdf")
-
-    if not raw_profile_text:
-        raise HTTPException(
-            status_code=400,
-            detail="Multipart requests must include raw_profile_text.",
-        )
-
     return {
-        "input_type": "multipart",
+        "input_type": "empty",
         "received_profile": None,
-        "raw_profile_text": raw_profile_text,
+        "raw_profile_text": "",
         "scholarship_goal": scholarship_goal,
-        "pdf_filename": pdf_filename,
     }
-
 
 def prepare_search_profile(
     received_profile: dict | None,
@@ -287,6 +289,36 @@ def prepare_search_profile(
         completed_profile = infer_profile_from_text(raw_profile_text, scholarship_goal)
 
     return PROFILE_AGENT.prepare_profile(completed_profile)
+
+
+def build_needs_more_information_response(
+    normalized_profile: dict,
+    minimum_input_validation: dict,
+    parsed_request: dict,
+    workflow_steps: list[dict],
+) -> dict:
+    workflow_steps = ensure_required_workflow_steps(workflow_steps)
+    response = build_empty_response(
+        message=minimum_input_validation["message"],
+        workflow_steps=workflow_steps,
+        errors=[],
+        status="needs_more_information",
+    )
+    response["normalized_profile"] = normalized_profile
+    response["minimum_input_validation"] = minimum_input_validation
+    response["missing_required_fields"] = minimum_input_validation[
+        "missing_required_fields"
+    ]
+    response["input_type"] = parsed_request["input_type"]
+    response["raw_profile_text"] = parsed_request["raw_profile_text"]
+    response["search_intent"] = None
+    response["search_signature"] = None
+    response["filtering_layers"] = []
+    response["rejection_summary"]["profile_missing_required_fields"] = len(
+        minimum_input_validation["missing_required_fields"]
+    )
+    response["workflow_counts"] = response["metrics"]
+    return response
 
 
 def run_live_search_pipeline(
@@ -312,7 +344,7 @@ def run_live_search_pipeline(
         metrics["generated_queries_count"] = len(queries)
         workflow_steps.append(
             build_workflow_step(
-                "Generating global scholarship search queries",
+                "Generating global scholarship queries",
                 "completed",
                 len(queries),
                 f"Generated {len(queries)} profile-dependent search queries.",
@@ -321,7 +353,7 @@ def run_live_search_pipeline(
     except Exception as exc:
         return build_failed_pipeline_payload(
             workflow_steps,
-            "Generating global scholarship search queries",
+            "Generating global scholarship queries",
             f"Live query generation failed: {exc}",
             errors,
         )
@@ -336,25 +368,33 @@ def run_live_search_pipeline(
         )
         metrics["sources_found_count"] = raw_sources_count
         metrics["sources_deduplicated_count"] = deduplicated_sources_count
+        metrics["expansion_rounds_used"] = int(
+            getattr(SEARCH_AGENT, "last_expansion_rounds_used", 0) or 0
+        )
         rejection_summary["duplicate"] += max(
             0,
             raw_sources_count - deduplicated_sources_count,
         )
         workflow_steps.append(
             build_workflow_step(
-                "Searching global scholarship sources",
+                "Searching global sources",
+                "completed",
+                raw_sources_count,
+                f"Collected {raw_sources_count} raw candidate sources.",
+            )
+        )
+        workflow_steps.append(
+            build_workflow_step(
+                "Deduplicating candidates",
                 "completed",
                 deduplicated_sources_count,
-                (
-                    f"Collected {raw_sources_count} raw candidates and kept "
-                    f"{deduplicated_sources_count} deduplicated sources."
-                ),
+                f"Kept {deduplicated_sources_count} deduplicated sources.",
             )
         )
     except Exception as exc:
         return build_failed_pipeline_payload(
             workflow_steps,
-            "Searching global scholarship sources",
+            "Searching global sources",
             f"Live web search failed: {exc}",
             errors,
         )
@@ -370,9 +410,15 @@ def run_live_search_pipeline(
             "accepted_with_warning"
         ]
         metrics["sources_rejected_count"] = source_counts["rejected"]
+        metrics["untrusted_sources_skipped_count"] = source_rejections[
+            "known_untrusted_source"
+        ]
+        metrics["secondary_guidance_sources_count"] = source_counts[
+            "accepted_with_warning"
+        ]
         workflow_steps.append(
             build_workflow_step(
-                "Validating official and verified sources",
+                "Validating trusted sources",
                 "completed",
                 len(accepted_sources),
                 (
@@ -386,7 +432,7 @@ def run_live_search_pipeline(
     except Exception as exc:
         return build_failed_pipeline_payload(
             workflow_steps,
-            "Validating official and verified sources",
+            "Validating trusted sources",
             f"Source validation failed: {exc}",
             errors,
         )
@@ -460,6 +506,17 @@ def run_live_search_pipeline(
                 ),
             )
         )
+        workflow_steps.append(
+            build_workflow_step(
+                "Resolving useful links",
+                "completed",
+                len(link_ready_scholarships),
+                (
+                    f"Resolved useful display links for "
+                    f"{len(link_ready_scholarships)} active scholarship records."
+                ),
+            )
+        )
     except Exception as exc:
         return build_failed_pipeline_payload(
             workflow_steps,
@@ -482,6 +539,14 @@ def run_live_search_pipeline(
                 "completed",
                 len(matching_results),
                 f"Matched {len(matching_results)} scholarships against the profile.",
+            )
+        )
+        workflow_steps.append(
+            build_workflow_step(
+                "Scoring compatibility",
+                "completed",
+                len(matching_results),
+                f"Scored compatibility for {len(matching_results)} scholarships.",
             )
         )
     except Exception as exc:
@@ -551,8 +616,8 @@ def run_live_search_pipeline(
         "message": message,
         "workflow_steps": ensure_required_workflow_steps(workflow_steps),
         "ranked_results": ranked_results,
-        "recommended": [],
-        "less_recommended": [],
+        "recommended": recommended_results,
+        "less_recommended": less_recommended_results,
         "errors": dedupe_text_values(errors),
         "metrics": metrics,
         "rejection_summary": rejection_summary,
@@ -697,6 +762,14 @@ def enrich_page_results_with_source_metadata(
             "query_used",
             "",
         )
+        enriched_page_result["query_family"] = page_result.get("query_family") or source.get(
+            "query_family",
+            "",
+        )
+        enriched_page_result["source_family"] = page_result.get("source_family") or source.get(
+            "source_family",
+            "",
+        )
         enriched_page_result["source_type"] = page_result.get("source_type") or source.get(
             "source_type",
             "",
@@ -706,6 +779,18 @@ def enrich_page_results_with_source_metadata(
         )
         enriched_page_result["source_acceptance_status"] = source.get(
             "acceptance_status"
+        )
+        enriched_page_result["validation_status"] = (
+            page_result.get("validation_status")
+            or source.get("validation_status")
+            or source.get("acceptance_status")
+        )
+        enriched_page_result["validation_reason"] = page_result.get(
+            "validation_reason"
+        ) or source.get("validation_reason", "")
+        enriched_page_result["warnings"] = page_result.get("warnings") or source.get(
+            "warnings",
+            [],
         )
         enriched_page_result["target_country"] = source.get("target_country")
         enriched_page_results.append(enriched_page_result)
@@ -915,6 +1000,9 @@ def build_empty_metrics() -> dict[str, int]:
         "generated_queries_count": 0,
         "sources_found_count": 0,
         "sources_deduplicated_count": 0,
+        "expansion_rounds_used": 0,
+        "untrusted_sources_skipped_count": 0,
+        "secondary_guidance_sources_count": 0,
         "sources_accepted_count": 0,
         "sources_accepted_with_warning_count": 0,
         "sources_rejected_count": 0,
@@ -932,13 +1020,17 @@ def build_empty_metrics() -> dict[str, int]:
 
 def build_empty_rejection_summary() -> dict[str, int]:
     return {
+        "duplicate": 0,
+        "known_untrusted_source": 0,
         "non_scholarship_page": 0,
         "untrusted_source": 0,
+        "validation_failed": 0,
         "expired_or_closed": 0,
         "no_useful_link": 0,
-        "duplicate": 0,
         "read_failed": 0,
         "extraction_failed": 0,
+        "profile_missing_required_fields": 0,
+        "other": 0,
     }
 
 
@@ -982,12 +1074,18 @@ def summarize_source_rejections(validated_sources: list[dict]) -> dict[str, int]
             for flag in source.get("risk_flags", [])
             if normalize_optional_text(flag)
         }
-        if source_type in {"irrelevant"} or "low_relevance" in risk_flags:
+        if "known_untrusted_source" in risk_flags:
+            summary["known_untrusted_source"] += 1
+        elif source_type in {"irrelevant", "non_scholarship_page"} or "low_relevance" in risk_flags:
             summary["non_scholarship_page"] += 1
         elif source_type == "expired_or_closed" or "expired_or_closed" in risk_flags:
             summary["expired_or_closed"] += 1
-        else:
+        elif source_type in {"generic_blog", "copied_aggregator", "spam", "unknown_unverified"}:
             summary["untrusted_source"] += 1
+        elif not source_type:
+            summary["validation_failed"] += 1
+        else:
+            summary["other"] += 1
     return summary
 
 
@@ -1018,15 +1116,28 @@ def ensure_required_workflow_steps(workflow_steps: list[dict]) -> list[dict]:
 
 
 def build_search_signature(normalized_profile: dict):
+    intent = (
+        normalized_profile.get("search_intent")
+        if isinstance(normalized_profile.get("search_intent"), dict)
+        else normalized_profile
+    )
     signature_payload = {
-        "scholarship_type": normalize_signature_value(
-            normalized_profile.get("scholarship_type")
+        "country_or_nationality": normalize_signature_value(
+            intent.get("country_or_nationality")
+            or intent.get("country_of_origin")
+            or intent.get("nationality")
         ),
-        "languages": normalize_signature_languages(normalized_profile.get("languages")),
-        "nationality": normalize_signature_value(normalized_profile.get("nationality")),
-        "budget": normalize_signature_budget(normalized_profile.get("budget")),
+        "languages": normalize_signature_languages(intent.get("languages")),
+        "scholarship_type": normalize_signature_value(intent.get("scholarship_type")),
     }
-    modality = normalize_signature_value(normalized_profile.get("preferred_modality"))
+
+    budget = normalize_signature_budget(intent.get("budget"))
+    if budget is not None:
+        signature_payload["budget"] = budget
+
+    modality = normalize_signature_value(
+        intent.get("modality") or intent.get("preferred_modality")
+    )
     if modality in {"online", "on-campus", "hybrid"}:
         signature_payload["modality"] = modality
 
@@ -1039,40 +1150,43 @@ def build_search_signature(normalized_profile: dict):
     return {
         "key": hashlib.sha256(signature_json.encode("utf-8")).hexdigest(),
         "payload": signature_payload,
-        "filter_order": build_filtering_layers(normalized_profile),
+        "filter_order": build_filtering_layers(intent),
     }
 
 
 def build_filtering_layers(normalized_profile: dict):
-    layers = [
-        {
-            "layer": 1,
-            "field": "scholarship_type",
-            "value": normalized_profile.get("scholarship_type"),
-        },
-        {
-            "layer": 2,
-            "field": "languages",
-            "value": normalized_profile.get("languages", []),
-        },
-        {
-            "layer": 3,
-            "field": "nationality",
-            "value": normalized_profile.get("nationality"),
-        },
-        {
-            "layer": 4,
-            "field": "budget",
-            "value": normalized_profile.get("budget"),
-        },
+    intent = (
+        normalized_profile.get("search_intent")
+        if isinstance(normalized_profile.get("search_intent"), dict)
+        else normalized_profile
+    )
+    field_values = [
+        ("country_or_nationality", intent.get("country_or_nationality") or intent.get("nationality")),
+        ("languages", intent.get("languages", [])),
+        ("scholarship_type", intent.get("scholarship_type")),
+        ("budget", intent.get("budget")),
     ]
-    modality = normalize_signature_value(normalized_profile.get("preferred_modality"))
+    layers = []
+    for field, value in field_values:
+        if value in (None, "", [], {}):
+            continue
+        layers.append(
+            {
+                "layer": len(layers) + 1,
+                "field": field,
+                "value": value,
+            }
+        )
+
+    modality = normalize_signature_value(
+        intent.get("modality") or intent.get("preferred_modality")
+    )
     if modality in {"online", "on-campus", "hybrid"}:
         layers.append(
             {
-                "layer": 5,
+                "layer": len(layers) + 1,
                 "field": "modality",
-                "value": normalized_profile.get("preferred_modality"),
+                "value": intent.get("modality") or intent.get("preferred_modality"),
             }
         )
     return layers
@@ -1102,14 +1216,13 @@ def normalize_signature_languages(value: Any):
 
 def normalize_signature_budget(value: Any):
     if not isinstance(value, dict):
-        return {
-            "currency": "usd",
-            "max_personal_contribution": None,
-        }
+        return None
 
     contribution = value.get("max_personal_contribution")
     if contribution == "":
         contribution = None
+    if contribution is None:
+        return None
     return {
         "currency": normalize_signature_value(value.get("currency") or "usd"),
         "max_personal_contribution": contribution,
@@ -1263,6 +1376,13 @@ def normalize_recommendation(record: dict, index: int):
         "display_link": normalized_links["display_link"],
         "final_score": final_score,
         "compatibility_score": compatibility_score,
+        "compatibility_points": normalize_non_negative_int(
+            record.get("compatibility_points")
+        ),
+        "max_possible_points": normalize_non_negative_int(
+            record.get("max_possible_points")
+        ),
+        "source_trust_score": normalize_score(record.get("source_trust_score")),
         "eligibility_decision": eligibility_decision,
         "priority_label": priority_label,
         "recommendation_summary": normalize_optional_text(
@@ -1275,6 +1395,12 @@ def normalize_recommendation(record: dict, index: int):
         "risk_factors": normalize_string_list(record.get("risk_factors")),
         "missing_requirements": normalize_string_list(
             record.get("missing_requirements")
+        ),
+        "matched_profile_fields": normalize_string_list(
+            record.get("matched_profile_fields") or record.get("matched_factors")
+        ),
+        "missing_profile_fields": normalize_string_list(
+            record.get("missing_profile_fields")
         ),
     }
 
@@ -1320,9 +1446,19 @@ def sort_recommendation_records(results: list[dict]) -> list[dict]:
         key=lambda result: (
             -normalize_score(result.get("final_score")),
             -normalize_score(result.get("compatibility_score")),
+            -normalize_score(result.get("source_trust_score")),
+            normalize_optional_text(result.get("scholarship_name")).lower(),
             normalize_rank(result.get("rank")),
         ),
     )
+
+
+def normalize_non_negative_int(value: Any) -> int:
+    try:
+        int_value = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, int_value)
 
 
 def normalize_rank(value: Any) -> int:
@@ -1354,6 +1490,7 @@ def normalize_workflow_steps(steps: Any):
 
 def build_workflow_step(step_name: str, status: str, count: int, message: str):
     return {
+        "name": step_name,
         "step_name": step_name,
         "status": normalize_workflow_status(status),
         "count": count,
@@ -1363,8 +1500,10 @@ def build_workflow_step(step_name: str, status: str, count: int, message: str):
 
 def normalize_workflow_status(value: Any):
     status = normalize_optional_text(value).lower()
-    if status in {"pending", "active", "completed", "failed", "skipped"}:
+    if status in {"pending", "running", "completed", "failed", "skipped"}:
         return status
+    if status in {"active", "current", "in_progress"}:
+        return "running"
     if status in {"success", "ok", "done"}:
         return "completed"
     if status in {"partial", "partial_failure"}:
@@ -1467,69 +1606,3 @@ def normalize_optional_text(value: Any):
     if value is None:
         return ""
     return str(value).strip()
-
-
-def parse_multipart_body(body: bytes, content_type: str):
-    boundary = get_multipart_boundary(content_type)
-    delimiter = b"--" + boundary.encode("utf-8")
-    fields: Dict[str, str] = {}
-    files: Dict[str, str] = {}
-
-    for part in body.split(delimiter):
-        part = part.strip(b"\r\n")
-        if not part or part == b"--":
-            continue
-
-        if part.endswith(b"--"):
-            part = part[:-2].rstrip(b"\r\n")
-
-        header_bytes, separator, content = part.partition(b"\r\n\r\n")
-        if not separator:
-            continue
-
-        headers = header_bytes.decode("utf-8", errors="replace").split("\r\n")
-        disposition = get_header_value(headers, "content-disposition")
-        if not disposition:
-            continue
-
-        disposition_params = parse_header_parameters(disposition)
-        field_name = disposition_params.get("name", "")
-        filename = disposition_params.get("filename", "")
-        if not field_name:
-            continue
-
-        content = content.rstrip(b"\r\n")
-        if filename:
-            files[field_name] = filename
-        else:
-            fields[field_name] = content.decode("utf-8", errors="replace")
-
-    return fields, files
-
-
-def get_multipart_boundary(content_type: str):
-    for part in content_type.split(";"):
-        key, separator, value = part.strip().partition("=")
-        if separator and key.lower() == "boundary":
-            boundary = value.strip().strip('"')
-            if boundary:
-                return boundary
-
-    raise ValueError("Missing multipart boundary.")
-
-
-def get_header_value(headers: list[str], header_name: str):
-    header_prefix = f"{header_name.lower()}:"
-    for header in headers:
-        if header.lower().startswith(header_prefix):
-            return header.split(":", 1)[1].strip()
-    return ""
-
-
-def parse_header_parameters(header_value: str):
-    parameters: Dict[str, str] = {}
-    for item in header_value.split(";"):
-        key, separator, value = item.strip().partition("=")
-        if separator:
-            parameters[key.lower()] = value.strip().strip('"')
-    return parameters

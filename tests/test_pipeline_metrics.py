@@ -151,6 +151,9 @@ class PipelineMetricsTests(unittest.TestCase):
         self.assertEqual(metrics["generated_queries_count"], 2)
         self.assertEqual(metrics["sources_found_count"], 4)
         self.assertEqual(metrics["sources_deduplicated_count"], 3)
+        self.assertEqual(metrics["expansion_rounds_used"], 0)
+        self.assertEqual(metrics["untrusted_sources_skipped_count"], 0)
+        self.assertEqual(metrics["secondary_guidance_sources_count"], 1)
         self.assertEqual(metrics["sources_accepted_count"], 1)
         self.assertEqual(metrics["sources_accepted_with_warning_count"], 1)
         self.assertEqual(metrics["sources_rejected_count"], 1)
@@ -166,11 +169,15 @@ class PipelineMetricsTests(unittest.TestCase):
 
         rejection_summary = payload["rejection_summary"]
         self.assertEqual(rejection_summary["duplicate"], 1)
+        self.assertEqual(rejection_summary["known_untrusted_source"], 0)
         self.assertEqual(rejection_summary["non_scholarship_page"], 1)
+        self.assertEqual(rejection_summary["validation_failed"], 0)
         self.assertEqual(rejection_summary["read_failed"], 1)
         self.assertEqual(rejection_summary["extraction_failed"], 1)
         self.assertEqual(rejection_summary["expired_or_closed"], 1)
         self.assertEqual(rejection_summary["no_useful_link"], 1)
+        self.assertEqual(rejection_summary["profile_missing_required_fields"], 0)
+        self.assertEqual(rejection_summary["other"], 0)
 
     def test_metrics_are_internally_consistent(self) -> None:
         metrics = self._run_fake_pipeline()["metrics"]
@@ -185,6 +192,10 @@ class PipelineMetricsTests(unittest.TestCase):
         )
         self.assertGreaterEqual(metrics["ranked_count"], metrics["recommended_count"])
         self.assertGreaterEqual(metrics["ranked_count"], metrics["less_recommended_count"])
+        self.assertGreaterEqual(
+            metrics["scholarships_extracted_count"],
+            metrics["scholarships_with_useful_link_count"],
+        )
 
     def test_workflow_counts_reflect_metrics(self) -> None:
         payload = self._run_fake_pipeline()
@@ -192,15 +203,19 @@ class PipelineMetricsTests(unittest.TestCase):
         steps = {step["step_name"]: step for step in payload["workflow_steps"]}
 
         self.assertEqual(
-            steps["Generating global scholarship search queries"]["count"],
+            steps["Generating global scholarship queries"]["count"],
             metrics["generated_queries_count"],
         )
         self.assertEqual(
-            steps["Searching global scholarship sources"]["count"],
+            steps["Searching global sources"]["count"],
+            metrics["sources_found_count"],
+        )
+        self.assertEqual(
+            steps["Deduplicating candidates"]["count"],
             metrics["sources_deduplicated_count"],
         )
         self.assertEqual(
-            steps["Validating official and verified sources"]["count"],
+            steps["Validating trusted sources"]["count"],
             metrics["sources_accepted_count"]
             + metrics["sources_accepted_with_warning_count"],
         )
@@ -209,9 +224,41 @@ class PipelineMetricsTests(unittest.TestCase):
             metrics["scholarships_extracted_count"],
         )
         self.assertEqual(
+            steps["Resolving useful links"]["count"],
+            metrics["scholarships_with_useful_link_count"],
+        )
+        self.assertEqual(
+            steps["Scoring compatibility"]["count"],
+            metrics["matched_count"],
+        )
+        self.assertEqual(
             steps["Ranking recommendations"]["count"],
             metrics["ranked_count"],
         )
+
+    def test_required_workflow_steps_are_present(self) -> None:
+        payload = self._run_fake_pipeline()
+        step_names = [step["step_name"] for step in payload["workflow_steps"]]
+        allowed_statuses = {"pending", "running", "completed", "skipped", "failed"}
+
+        for expected_step in (
+            "Reading profile input",
+            "Normalizing profile",
+            "Building search intent",
+            "Generating global scholarship queries",
+            "Searching global sources",
+            "Deduplicating candidates",
+            "Validating trusted sources",
+            "Reading scholarship pages",
+            "Extracting scholarship data",
+            "Resolving useful links",
+            "Scoring compatibility",
+            "Ranking recommendations",
+            "Preparing final results",
+        ):
+            self.assertIn(expected_step, step_names)
+        for step in payload["workflow_steps"]:
+            self.assertIn(step["status"], allowed_statuses)
 
     def test_frontend_response_preserves_metrics_object(self) -> None:
         payload = self._run_fake_pipeline()
@@ -224,10 +271,18 @@ class PipelineMetricsTests(unittest.TestCase):
 
         self.assertIn("metrics", response)
         self.assertIn("rejection_summary", response)
+        self.assertIn("workflow_steps", response)
         self.assertEqual(
             response["metrics"]["ranked_count"],
             len(response["ranked_results"]),
         )
+        self.assertEqual(
+            response["metrics"]["recommended_count"],
+            len(response["recommended"]),
+        )
+        self.assertLessEqual(len(response["less_recommended"]), 10)
+        for result in [*response["recommended"], *response["less_recommended"]]:
+            self.assertTrue(result["display_link"])
 
     def _run_fake_pipeline(self) -> dict:
         with patch("api.server.QUERY_AGENT", FakeQueryAgent()), patch(

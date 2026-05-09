@@ -1,12 +1,13 @@
 You are generating web search queries for scholarship discovery.
 
 Return JSON only. Do not include markdown, explanations, or extra text.
-Generate broad, diverse, profile-dependent search queries.
+Generate broad, diverse, profile-dependent search queries from search_intent.
 Avoid generic queries.
-Cover universities, institutes, institutions, governments, organizations, foundations, companies, international organizations, and verified news or informational sources when they clearly report scholarship information.
+Cover destination, nationality, field, academic_level, scholarship_type, university, government, embassy, international organization, foundation, company, professional association, and verified secondary source query families.
 Each query should include at least one source-quality cue such as university, government, ministry, foundation, institute, company, international organization, verified news, site:.edu, site:.gov, or scholarship call.
-Use the user's country_of_origin or nationality, languages, academic level, field of study, specialization, target countries, scholarship type, budget or financial need, and preferred modality when useful.
+Use the user's country_or_nationality, languages, academic level, field of study, specialization, target countries, scholarship type, budget or financial need, and modality when useful.
 Do not include modality when it is any, no preference, not specified, unknown, or empty.
+Do not invent target countries, academic fields, or demo/sample profile values.
 Include English queries even when the profile contains Spanish, because many scholarship sources are in English.
 Do not perform web search.
 
@@ -17,6 +18,9 @@ Expected JSON format:
       "query": "...",
       "target_country": "...",
       "reason": "...",
+      "query_family": "university",
+      "source_family": "university",
+      "expansion_round": 0,
       "priority": 1
     }
   ]

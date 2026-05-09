@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { ProgressLogLine, ProgressPanel } from "./ProgressPanel";
 import { mockScholarships } from "../src/data/mockScholarships";
 import {
@@ -18,7 +18,7 @@ type PipelineTemplate = {
   label: string;
   count?: number;
   countLabel?: string;
-  log: (fileName: string | null) => string;
+  log: () => string;
 };
 
 const PIPELINE: PipelineTemplate[] = [
@@ -28,29 +28,33 @@ const PIPELINE: PipelineTemplate[] = [
     log: () => "Profile input received.",
   },
   {
-    id: "cv",
-    label: "Reading uploaded CV PDF, if provided",
-    log: (fileName) =>
-      fileName ? `CV PDF uploaded: ${fileName}` : "No CV PDF uploaded. Continuing with profile text.",
-  },
-  {
     id: "normalize",
     label: "Normalizing profile",
     log: () => "Preparing a normalized profile from the submitted text.",
   },
   {
+    id: "intent",
+    label: "Building search intent",
+    log: () => "Waiting for backend search intent.",
+  },
+  {
     id: "queries",
-    label: "Generating global scholarship search queries",
+    label: "Generating global scholarship queries",
     log: () => "Waiting for backend query generation.",
   },
   {
     id: "search",
-    label: "Searching global scholarship sources",
+    label: "Searching global sources",
     log: () => "Waiting for backend source search.",
   },
   {
+    id: "dedupe",
+    label: "Deduplicating candidates",
+    log: () => "Waiting for backend candidate deduplication.",
+  },
+  {
     id: "validate",
-    label: "Validating official scholarship sources",
+    label: "Validating trusted sources",
     log: () => "Waiting for backend source validation.",
   },
   {
@@ -64,9 +68,14 @@ const PIPELINE: PipelineTemplate[] = [
     log: () => "Waiting for backend extraction.",
   },
   {
-    id: "match",
-    label: "Matching scholarships with profile",
-    log: () => "Waiting for backend matching.",
+    id: "links",
+    label: "Resolving useful links",
+    log: () => "Waiting for backend link resolution.",
+  },
+  {
+    id: "score",
+    label: "Scoring compatibility",
+    log: () => "Waiting for backend compatibility scoring.",
   },
   {
     id: "rank",
@@ -80,13 +89,10 @@ const PIPELINE: PipelineTemplate[] = [
   },
 ];
 
-const initialSteps = createSteps(-1, null);
+const initialSteps = createSteps(-1);
 
 export function TerminalProgressWorkflow() {
-  const preparedSubmissionRef = useRef<FormData | null>(null);
   const [profileText, setProfileText] = useState("");
-  const [cvFile, setCvFile] = useState<File | null>(null);
-  const [fileError, setFileError] = useState("");
   const [profileError, setProfileError] = useState("");
   const [runId, setRunId] = useState(0);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -98,11 +104,10 @@ export function TerminalProgressWorkflow() {
   const [backendWorkflowSteps, setBackendWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [pageMessage, setPageMessage] = useState("");
 
-  const cvFileName = cvFile?.name || null;
   const visibleSteps = backendWorkflowSteps.length
     ? backendWorkflowSteps
     : hasSubmitted
-      ? createSteps(activeIndex, cvFileName)
+      ? createSteps(activeIndex)
       : initialSteps;
   const showResults = hasSubmitted && !isRunning && results.length > 0;
   const showFallbackActions = hasSubmitted && !isRunning && Boolean(pageMessage);
@@ -142,7 +147,7 @@ export function TerminalProgressWorkflow() {
         ...currentLogs,
         {
           id: `${runId}-${step.id}`,
-          message: step.log(cvFileName),
+          message: step.log(),
           tone: step.id === "final" ? "success" : "default",
         },
       ]);
@@ -151,7 +156,7 @@ export function TerminalProgressWorkflow() {
     }, 620);
 
     return () => window.clearInterval(intervalId);
-  }, [cvFileName, hasSubmitted, isRunning, runId]);
+  }, [hasSubmitted, isRunning, runId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -162,14 +167,6 @@ export function TerminalProgressWorkflow() {
       return;
     }
 
-    if (fileError) {
-      return;
-    }
-
-    preparedSubmissionRef.current = buildSubmissionFormData(
-      trimmedProfile,
-      cvFile,
-    );
     setProfileError("");
     setHasSubmitted(true);
     setPageMessage("");
@@ -182,7 +179,6 @@ export function TerminalProgressWorkflow() {
     try {
       const response = await searchScholarshipsWithProfileInput({
         rawProfileText: trimmedProfile,
-        cvPdf: cvFile,
       });
 
       if (!response.results.length) {
@@ -190,7 +186,7 @@ export function TerminalProgressWorkflow() {
         setBackendWorkflowSteps(
           response.workflowSteps.length
             ? response.workflowSteps
-            : createFailedSteps(activeIndex, cvFileName),
+            : createFailedSteps(activeIndex),
         );
         setPageMessage(
           response.isUnsupportedShape
@@ -237,7 +233,7 @@ export function TerminalProgressWorkflow() {
       ]);
     } catch (error) {
       setResults([]);
-      setBackendWorkflowSteps(createFailedSteps(activeIndex, cvFileName));
+      setBackendWorkflowSteps(createFailedSteps(activeIndex));
       setPageMessage(`${getReadableErrorMessage(error)} Choose a fallback option below.`);
       setLogs((currentLogs) => [
         ...currentLogs,
@@ -250,30 +246,6 @@ export function TerminalProgressWorkflow() {
     } finally {
       setIsRunning(false);
     }
-  }
-
-  function handlePdfChange(event: ChangeEvent<HTMLInputElement>) {
-    const selectedFile = event.target.files?.[0] || null;
-
-    if (!selectedFile) {
-      setCvFile(null);
-      setFileError("");
-      return;
-    }
-
-    const isPdf =
-      selectedFile.type === "application/pdf" ||
-      selectedFile.name.toLowerCase().endsWith(".pdf");
-
-    if (!isPdf) {
-      event.target.value = "";
-      setCvFile(null);
-      setFileError("Only PDF files are accepted for the CV/resume upload.");
-      return;
-    }
-
-    setCvFile(selectedFile);
-    setFileError("");
   }
 
   async function handleLoadLatestDemo() {
@@ -347,8 +319,8 @@ export function TerminalProgressWorkflow() {
             <p className="eyebrow">Global scholarship finder</p>
             <h1>Follow every search step, then open the source.</h1>
             <p className="hero-copy">
-              Enter your profile, optionally attach a CV PDF, and watch a clear
-              search pipeline before the recommendations appear.
+              Enter your written profile and watch a clear search pipeline
+              before the recommendations appear.
             </p>
           </div>
 
@@ -387,18 +359,7 @@ export function TerminalProgressWorkflow() {
                 </small>
               </label>
 
-              <label className="field-group file-field">
-                <span>CV/resume PDF (optional)</span>
-                <input type="file" accept="application/pdf,.pdf" onChange={handlePdfChange} />
-                <small>
-                  {cvFile
-                    ? `Selected file: ${cvFile.name}`
-                    : "PDF only. The file is kept ready for multipart/form-data."}
-                </small>
-              </label>
-
               {profileError ? <p className="form-error">{profileError}</p> : null}
-              {fileError ? <p className="form-error">{fileError}</p> : null}
 
               <button className="form-submit" type="submit" disabled={isRunning}>
                 {isRunning ? "Searching globally..." : "Search scholarships"}
@@ -523,14 +484,14 @@ function getResultDisplayLink(result: ScholarshipResult) {
   ).trim();
 }
 
-function createSteps(activeIndex: number, fileName: string | null): WorkflowStep[] {
+function createSteps(activeIndex: number): WorkflowStep[] {
   return PIPELINE.map((step, index) => ({
     id: step.id,
     label: step.label,
     status: getStatus(index, activeIndex),
     count: index <= activeIndex || activeIndex >= PIPELINE.length ? step.count : undefined,
     countLabel: step.countLabel,
-    message: getStepMessage(step, index, activeIndex, fileName),
+    message: getStepMessage(step, index, activeIndex),
   }));
 }
 
@@ -550,19 +511,18 @@ function getStepMessage(
   step: PipelineTemplate,
   index: number,
   activeIndex: number,
-  fileName: string | null,
 ) {
   if (index > activeIndex && activeIndex < PIPELINE.length) {
     return "Waiting for previous step.";
   }
 
-  return step.log(fileName);
+  return step.log();
 }
 
-function createFailedSteps(activeIndex: number, fileName: string | null): WorkflowStep[] {
+function createFailedSteps(activeIndex: number): WorkflowStep[] {
   const failedIndex = Math.max(0, Math.min(activeIndex, PIPELINE.length - 1));
 
-  return createSteps(failedIndex, fileName).map((step, index) => {
+  return createSteps(failedIndex).map((step, index) => {
     if (index === failedIndex) {
       return {
         ...step,
@@ -585,20 +545,6 @@ function sortResults(results: ScholarshipResult[]) {
 
 function isRecommended(priorityLabel: string) {
   return ["high_priority", "medium_priority"].includes(priorityLabel);
-}
-
-function buildSubmissionFormData(
-  profileText: string,
-  cvFile: File | null,
-) {
-  const formData = new FormData();
-  formData.append("raw_profile_text", profileText);
-
-  if (cvFile) {
-    formData.append("cv_pdf", cvFile);
-  }
-
-  return formData;
 }
 
 function getReadableErrorMessage(error: unknown) {

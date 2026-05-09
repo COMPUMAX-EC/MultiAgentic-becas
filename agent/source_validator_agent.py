@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from config.settings import settings
+from database.repository import get_untrusted_source_match, save_untrusted_source
 from llm.provider import LLMProviderError, generate_text
 from schemas.source_schema import SourceValidationError, build_validated_source
 from tools.date_validator import has_obvious_expired_signal
@@ -74,6 +75,14 @@ SCHOLARSHIP_DATABASE_DOMAINS = (
     "youthopportunitieshub.com",
 )
 
+COPIED_AGGREGATOR_TERMS = (
+    "copied scholarship",
+    "scholarship listing",
+    "list of scholarships",
+    "top scholarships",
+    "fully funded scholarships 202",
+)
+
 OFFICIAL_GOVERNMENT_DOMAINS = (
     "canada.ca",
     "gc.ca",
@@ -115,6 +124,7 @@ GOVERNMENT_TEXT_TERMS = (
     "government",
     "ministry",
     "embassy",
+    "consulate",
     "department of education",
     "secretariat",
 )
@@ -130,7 +140,15 @@ INSTITUTE_TEXT_TERMS = (
 )
 FOUNDATION_TEXT_TERMS = (
     "foundation",
-    "fund",
+)
+PROFESSIONAL_ASSOCIATION_TERMS = (
+    "professional association",
+    "association scholarship",
+    "society scholarship",
+    "association of",
+    "computer society",
+    "ieee",
+    "acm",
 )
 INTERNATIONAL_ORGANIZATION_TERMS = (
     "united nations",
@@ -141,11 +159,40 @@ INTERNATIONAL_ORGANIZATION_TERMS = (
     "oas",
     "international organization",
 )
+SECONDARY_INFORMATIONAL_TYPES = {
+    "verified_news",
+    "verified_newspaper",
+    "verified_magazine",
+    "verified_education_portal",
+    "verified_scholarship_information_source",
+}
+DIRECT_TRUSTED_TYPES = {
+    "university",
+    "government",
+    "embassy",
+    "international_organization",
+    "recognized_foundation",
+    "official_company",
+    "professional_association",
+    "official_pdf",
+}
+CLEARLY_UNTRUSTED_TYPES = {
+    "generic_blog",
+    "copied_aggregator",
+    "spam",
+    "spam_or_low_quality",
+    "unknown_unverified",
+}
 
 
 class SourceValidatorAgent:
-    def __init__(self, prompt_template_path: Path = PROMPT_TEMPLATE_PATH) -> None:
+    def __init__(
+        self,
+        prompt_template_path: Path = PROMPT_TEMPLATE_PATH,
+        db_path: str | Path | None = None,
+    ) -> None:
         self.prompt_template_path = prompt_template_path
+        self.db_path = db_path
 
     def validate_sources(self, candidate_results: list[dict]) -> list[dict]:
         return [self.validate_source(result) for result in candidate_results]
@@ -176,12 +223,24 @@ class SourceValidatorAgent:
         if not title or not url or domain is None:
             return build_validated_source(
                 candidate_with_metadata,
-                "spam_or_low_quality",
+                "spam",
                 0,
                 0,
                 "reject",
                 ["Missing title or valid URL."],
                 ["malformed_or_missing_url"],
+            )
+
+        known_untrusted = get_untrusted_source_match(url, domain, db_path=self.db_path)
+        if known_untrusted is not None:
+            return build_validated_source(
+                candidate_with_metadata,
+                known_untrusted.get("source_type") or "unknown_unverified",
+                0,
+                0,
+                "reject",
+                ["known_untrusted_source"],
+                ["known_untrusted_source"],
             )
 
         if has_obvious_expired_signal(title, snippet):
@@ -198,7 +257,7 @@ class SourceValidatorAgent:
         if not self._has_scholarship_signal(title, snippet):
             return build_validated_source(
                 candidate_with_metadata,
-                "irrelevant",
+                "non_scholarship_page",
                 20,
                 10,
                 "reject",
@@ -210,7 +269,7 @@ class SourceValidatorAgent:
         if relevance_score < 25:
             return build_validated_source(
                 candidate_with_metadata,
-                "irrelevant",
+                "non_scholarship_page",
                 20,
                 relevance_score,
                 "reject",
@@ -224,13 +283,14 @@ class SourceValidatorAgent:
             title,
             snippet,
             str(candidate_result.get("source_type") or ""),
+            str(candidate_result.get("source_family") or ""),
         )
         reasons.append(f"Domain classified as {source_type}.")
         risk_flags.append("source_type_inferred")
 
         if has_suspicious_domain(url):
             risk_flags.append("suspicious_or_media_domain")
-            if source_type == "unknown":
+            if source_type in {"unknown", "unknown_unverified"}:
                 source_type = "generic_blog"
                 reliability_score = min(reliability_score, 35)
 
@@ -241,9 +301,20 @@ class SourceValidatorAgent:
 
         if not self._has_deadline_signal(title, snippet):
             risk_flags.append("deadline_unknown")
-        if source_type.startswith("verified_"):
-            risk_flags.extend(["informational_source", "official_link_not_extracted"])
-        if source_type not in {"irrelevant", "expired_or_closed", "spam_or_low_quality"}:
+        if source_type in SECONDARY_INFORMATIONAL_TYPES:
+            risk_flags.extend(
+                [
+                    "informational_source",
+                    "secondary_guidance_only",
+                    "official_call_not_confirmed",
+                ]
+            )
+        if source_type not in {
+            "non_scholarship_page",
+            "expired_or_closed",
+            "spam",
+            "spam_or_low_quality",
+        }:
             risk_flags.append("requirements_incomplete")
         reasons[0] = f"Domain classified as {source_type}."
 
@@ -254,7 +325,7 @@ class SourceValidatorAgent:
             risk_flags,
         )
 
-        return build_validated_source(
+        validated_source = build_validated_source(
             candidate_with_metadata,
             source_type,
             reliability_score,
@@ -263,6 +334,8 @@ class SourceValidatorAgent:
             reasons,
             risk_flags,
         )
+        self._remember_untrusted_if_needed(validated_source)
+        return validated_source
 
     def _score_reliability(
         self,
@@ -271,13 +344,20 @@ class SourceValidatorAgent:
         title: str,
         snippet: str,
         candidate_source_type: str,
+        candidate_source_family: str = "",
     ) -> tuple[str, int]:
         lowered_url = url.casefold()
         text = f"{title} {snippet} {url} {domain}".casefold()
         preliminary_type = candidate_source_type.strip().casefold()
+        preliminary_family = candidate_source_family.strip().casefold()
+
+        if self._looks_like_copied_aggregator(domain, text):
+            return "copied_aggregator", 25
 
         if lowered_url.endswith(".pdf") and self._looks_official_domain(domain, text):
             return "official_pdf", 82
+        if "embassy" in text or "consulate" in text or preliminary_family == "embassy":
+            return "embassy", 88
         if any(domain.endswith(pattern) for pattern in OFFICIAL_GOVERNMENT_DOMAINS):
             return "government", 95
         if domain.endswith((".gov", ".gov.uk", ".gov.ca", ".gov.au", ".gouv.fr")):
@@ -295,13 +375,15 @@ class SourceValidatorAgent:
         if any(term in text for term in INSTITUTE_TEXT_TERMS):
             return "institute", 78
         if any(domain.endswith(pattern) for pattern in SCHOLARSHIP_DATABASE_DOMAINS):
-            return "scholarship_database", 55
+            return "copied_aggregator", 35
         if any(term in text for term in FOUNDATION_TEXT_TERMS):
-            return "foundation", 78
+            return "recognized_foundation", 78
         if any(pattern in domain for pattern in OFFICIAL_ORGANIZATION_DOMAINS):
             return "organization", 80
         if any(pattern in domain for pattern in OFFICIAL_COMPANY_DOMAINS):
-            return "company", 78
+            return "official_company", 78
+        if any(term in text for term in PROFESSIONAL_ASSOCIATION_TERMS):
+            return "professional_association", 78
         if any(domain.endswith(pattern) for pattern in TRUSTED_PORTAL_DOMAINS):
             return "verified_education_portal", 70
         if any(domain.endswith(pattern) for pattern in VERIFIED_NEWS_DOMAINS):
@@ -311,16 +393,21 @@ class SourceValidatorAgent:
         if preliminary_type in {
             "university",
             "government",
+            "embassy",
             "organization",
             "foundation",
+            "recognized_foundation",
             "institute",
             "company",
+            "official_company",
+            "international_organization",
+            "professional_association",
             "verified_news",
         }:
-            return preliminary_type, 60
+            return self._canonical_preliminary_type(preliminary_type), 60
         if domain.endswith(".org"):
             return "organization", 65
-        return "unknown", 45
+        return "unknown_unverified", 45
 
     def _score_relevance(self, title: str, snippet: str, query: str) -> int:
         text = f"{title} {snippet}".casefold()
@@ -371,23 +458,21 @@ class SourceValidatorAgent:
         risk_flags: list[str],
     ) -> str:
         if source_type in {
+            "non_scholarship_page",
             "irrelevant",
+            "spam",
             "spam_or_low_quality",
             "expired_or_closed",
             "generic_blog",
             "scholarship_database",
+            "copied_aggregator",
             "unknown",
+            "unknown_unverified",
         }:
             return "reject"
         if reliability_score < 30 or relevance_score < 25:
             return "reject"
-        if source_type in {
-            "verified_news",
-            "verified_newspaper",
-            "verified_magazine",
-            "verified_education_portal",
-            "verified_scholarship_information_source",
-        }:
+        if source_type in SECONDARY_INFORMATIONAL_TYPES:
             return "review"
         hard_risk_flags = {
             "suspicious_or_media_domain",
@@ -402,10 +487,10 @@ class SourceValidatorAgent:
         return "accept"
 
     def _should_use_llm(self, validated_source: dict) -> bool:
-        return (
-            settings.SOURCE_VALIDATION_USE_LLM
+            return (
+                settings.SOURCE_VALIDATION_USE_LLM
             and validated_source["decision"] == "review"
-            and validated_source["source_type"] == "unknown"
+            and validated_source["source_type"] == "unknown_unverified"
         )
 
     def _classify_with_llm(self, candidate_result: dict) -> dict | None:
@@ -448,6 +533,36 @@ class SourceValidatorAgent:
                 *FOUNDATION_TEXT_TERMS,
                 "organization",
             )
+        )
+
+    def _canonical_preliminary_type(self, source_type: str) -> str:
+        mapping = {
+            "foundation": "recognized_foundation",
+            "company": "official_company",
+        }
+        return mapping.get(source_type, source_type)
+
+    def _looks_like_copied_aggregator(self, domain: str, text: str) -> bool:
+        if any(domain.endswith(pattern) for pattern in SCHOLARSHIP_DATABASE_DOMAINS):
+            return True
+        return any(term in text for term in COPIED_AGGREGATOR_TERMS)
+
+    def _remember_untrusted_if_needed(self, validated_source: dict) -> None:
+        if validated_source.get("decision") != "reject":
+            return
+        source_type = str(validated_source.get("source_type") or "")
+        risk_flags = set(validated_source.get("risk_flags") or [])
+        if source_type not in CLEARLY_UNTRUSTED_TYPES and not {
+            "suspicious_or_media_domain",
+            "blog_or_media_domain",
+        }.intersection(risk_flags):
+            return
+        save_untrusted_source(
+            validated_source.get("url"),
+            validated_source.get("source_domain"),
+            validated_source.get("validation_reason") or "Source rejected.",
+            source_type,
+            db_path=self.db_path,
         )
 
     def _verified_media_type(self, domain: str) -> str:

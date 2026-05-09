@@ -7,9 +7,15 @@ Preserve unknown fields as null or empty lists.
 Detect deadline if available.
 Detect application status if available.
 Extract official_link, application_url, source_url, and pdf_url when available.
+Preserve source_url exactly as provided in the input metadata.
+Extract official_link if the page contains a direct official scholarship or call page.
+Extract application_url if the page contains a direct application form or apply link.
+Extract pdf_url when the source or page links point to an official PDF announcement.
 If no official direct scholarship or application link is found, preserve the input source_url as the traceable source.
 Use application_url for direct apply links and official_link for the official scholarship page.
+Do not invent URLs.
 Allowed application_status values: open, closed, unknown, upcoming.
+Set deadline_status to open, closed, upcoming, or unknown when evidence is available.
 Include evidence snippets copied from the page text.
 Support multiple scholarships from one page.
 Ignore unrelated content.
@@ -27,6 +33,7 @@ Expected JSON format:
       "fields": ["..."],
       "benefits": ["..."],
       "deadline": "...",
+      "deadline_status": "unknown",
       "requirements": ["..."],
       "source_url": "...",
       "official_link": "...",

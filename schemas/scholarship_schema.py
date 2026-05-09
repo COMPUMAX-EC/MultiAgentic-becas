@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from tools.date_validator import detect_status_from_deadline, has_obvious_expired_signal
 from utils.url_utils import first_useful_url, normalize_useful_url
 
 ALLOWED_APPLICATION_STATUSES = {"open", "closed", "unknown", "upcoming"}
+ALLOWED_DEADLINE_STATUSES = {"open", "closed", "unknown", "upcoming"}
 LIST_FIELDS = (
     "eligible_nationalities",
     "required_languages",
@@ -47,6 +49,7 @@ def validate_scholarship_extractions(
             source_metadata.get("source_url"),
             source_metadata.get("original_url"),
             source_metadata.get("url"),
+            raw_scholarship.get("source_url"),
         )
         if not source_url:
             raise ScholarshipValidationError("source_url must be preserved.")
@@ -61,7 +64,23 @@ def validate_scholarship_extractions(
         pdf_url = normalize_useful_url(raw_scholarship.get("pdf_url")) or normalize_useful_url(
             source_metadata.get("pdf_url")
         )
-        display_link = first_useful_url(official_link, application_url, source_url, pdf_url)
+        display_link = resolve_display_link(
+            {
+                "official_link": official_link,
+                "application_url": application_url,
+                "source_url": source_url,
+                "pdf_url": pdf_url,
+            }
+        )
+        if not display_link:
+            continue
+
+        deadline = _clean_text(raw_scholarship.get("deadline"))
+        deadline_status = _clean_deadline_status(
+            raw_scholarship.get("deadline_status"),
+            deadline,
+            raw_scholarship,
+        )
 
         cleaned_scholarship = {
             "scholarship_name": scholarship_name,
@@ -76,7 +95,8 @@ def validate_scholarship_extractions(
             ),
             "fields": _clean_list(raw_scholarship.get("fields")),
             "benefits": _clean_list(raw_scholarship.get("benefits")),
-            "deadline": _clean_text(raw_scholarship.get("deadline")),
+            "deadline": deadline,
+            "deadline_status": deadline_status,
             "requirements": _clean_list(raw_scholarship.get("requirements")),
             "application_status": application_status,
             "source_url": source_url,
@@ -86,7 +106,10 @@ def validate_scholarship_extractions(
             "display_link": display_link,
             "original_url": source_metadata.get("original_url"),
             "query_used": source_metadata.get("query_used"),
+            "query_family": source_metadata.get("query_family"),
+            "source_family": source_metadata.get("source_family"),
             "source_type": _clean_text(source_metadata.get("source_type")),
+            "source_validation_status": source_metadata.get("source_validation_status"),
             "source_reliability_score": _clean_score(
                 source_metadata.get("source_reliability_score")
             ),
@@ -101,6 +124,34 @@ def validate_scholarship_extractions(
         raise ScholarshipValidationError("No valid scholarships were extracted.")
 
     return cleaned_scholarships
+
+
+def resolve_link_fields(record: dict) -> dict:
+    official_link = first_useful_url(
+        record.get("official_link"),
+        record.get("official_url"),
+    )
+    application_url = first_useful_url(
+        record.get("application_url"),
+        record.get("apply_url"),
+    )
+    source_url = first_useful_url(
+        record.get("source_url"),
+        record.get("url"),
+        record.get("link"),
+    )
+    pdf_url = first_useful_url(record.get("pdf_url"))
+    return {
+        "official_link": official_link,
+        "application_url": application_url,
+        "source_url": source_url,
+        "pdf_url": pdf_url,
+        "display_link": first_useful_url(official_link, application_url, source_url, pdf_url),
+    }
+
+
+def resolve_display_link(record: dict) -> str:
+    return resolve_link_fields(record)["display_link"]
 
 
 def _clean_text(value: object) -> str | None:
@@ -141,6 +192,42 @@ def _clean_application_status(value: object) -> str:
     if normalized_value not in ALLOWED_APPLICATION_STATUSES:
         return "unknown"
     return normalized_value
+
+
+def _clean_deadline_status(
+    value: object,
+    deadline: str | None,
+    raw_scholarship: dict,
+) -> str:
+    if isinstance(value, str):
+        normalized_value = value.strip().lower()
+        if normalized_value in ALLOWED_DEADLINE_STATUSES:
+            return normalized_value
+
+    if not deadline:
+        application_status = str(raw_scholarship.get("application_status") or "").lower()
+        return "closed" if application_status == "closed" else "unknown"
+
+    text = " ".join(
+        str(item or "")
+        for item in (
+            deadline,
+            raw_scholarship.get("scholarship_name"),
+            raw_scholarship.get("application_status"),
+            " ".join(_clean_list(raw_scholarship.get("evidence_snippets"))),
+        )
+    )
+    if has_obvious_expired_signal(text, ""):
+        return "closed"
+    detected_status = detect_status_from_deadline(
+        deadline,
+        raw_scholarship.get("application_status"),
+    )
+    if detected_status == "expired":
+        return "closed"
+    if detected_status in ALLOWED_DEADLINE_STATUSES:
+        return detected_status
+    return "unknown"
 
 
 def _first_text(*values: str | None) -> str:

@@ -97,15 +97,25 @@ FIELD_ALIASES = {
     "systems engineering": "Computer Science",
     "computer science": "Computer Science",
     "ciencias de la computacion": "Computer Science",
+    "information technology": "Information Technology",
+    "tecnologia de la informacion": "Information Technology",
+    "tecnologia informacion": "Information Technology",
     "informatica": "Computer Science",
     "software": "Software Engineering",
+    "software development": "Software Engineering",
+    "programming": "Computer Science",
+    "programacion": "Computer Science",
     "software engineering": "Software Engineering",
     "engenharia de software": "Software Engineering",
+    "tecnologia": "Technology",
+    "technology": "Technology",
+    "tech": "Technology",
     "data science": "Data Science",
     "ciencia de datos": "Data Science",
     "ciencia dos dados": "Data Science",
     "cybersecurity": "Cybersecurity",
     "ciberseguridad": "Cybersecurity",
+    "cloud computing": "Cloud Computing",
     "graphic design": "Graphic Design",
     "diseno grafico": "Graphic Design",
     "design grafico": "Graphic Design",
@@ -122,17 +132,65 @@ SPECIALIZATION_ALIASES = {
 }
 
 SCHOLARSHIP_TYPE_ALIASES = {
+    "partial or full scholarships": "Full or partial funding",
+    "full or partial scholarships": "Full or partial funding",
+    "partial and full scholarships": "Full or partial funding",
+    "full and partial scholarships": "Full or partial funding",
+    "partial full scholarships": "Full or partial funding",
+    "full partial scholarships": "Full or partial funding",
+    "partial or full scholarship": "Full or partial funding",
+    "full or partial scholarship": "Full or partial funding",
+    "partial and full scholarship": "Full or partial funding",
+    "full and partial scholarship": "Full or partial funding",
+    "partial full scholarship": "Full or partial funding",
+    "full partial scholarship": "Full or partial funding",
+    "partial or full funding": "Full or partial funding",
+    "full or partial funding": "Full or partial funding",
+    "partial and full funding": "Full or partial funding",
+    "full and partial funding": "Full or partial funding",
+    "partial full funding": "Full or partial funding",
+    "full partial funding": "Full or partial funding",
+    "complete or partial scholarships": "Full or partial funding",
+    "partial or complete scholarships": "Full or partial funding",
+    "complete and partial scholarships": "Full or partial funding",
+    "partial and complete scholarships": "Full or partial funding",
+    "complete partial scholarships": "Full or partial funding",
+    "partial complete scholarships": "Full or partial funding",
+
+    "becas parciales o completas": "Full or partial funding",
+    "becas completas o parciales": "Full or partial funding",
+    "beca parcial o completa": "Full or partial funding",
+    "beca completa o parcial": "Full or partial funding",
+    "becas parciales y completas": "Full or partial funding",
+    "becas completas y parciales": "Full or partial funding",
+    "beca parcial y completa": "Full or partial funding",
+    "beca completa y parcial": "Full or partial funding",
+    "financiamiento parcial o completo": "Full or partial funding",
+    "financiamiento completo o parcial": "Full or partial funding",
+    "financiamiento parcial y completo": "Full or partial funding",
+    "financiamiento completo y parcial": "Full or partial funding",
+    "financiacion parcial o completa": "Full or partial funding",
+    "financiacion completa o parcial": "Full or partial funding",
+    "financiacion parcial y completa": "Full or partial funding",
+    "financiacion completa y parcial": "Full or partial funding",
+
     "beca completa": "Full funding",
     "financiacion completa": "Full funding",
     "fully funded": "Full funding",
     "full funding": "Full funding",
     "full scholarship": "Full funding",
+
     "beca parcial": "Partial funding",
     "financiacion parcial": "Partial funding",
     "partial funding": "Partial funding",
     "partial scholarship": "Partial funding",
     "parcial": "Partial funding",
 }
+
+COMBINED_SCHOLARSHIP_TYPE_PATTERNS = (
+    r"\b(?:partial|full|complete)\s+(?:or|and)?\s*(?:partial|full|complete)\s+(?:scholarships?|funding)\b",
+    r"\b(?:becas?|financiamiento|financiacion)\s+(?:parcial(?:es)?|complet[ao]s?)\s+(?:o|y)\s+(?:parcial(?:es)?|complet[ao]s?)\b",
+)
 
 LANGUAGE_ALIASES = {
     "ingles": "English",
@@ -178,12 +236,13 @@ def infer_profile_from_text(raw_profile_text: str, scholarship_goal: str = "") -
     academic_level = first_alias_match(normalized_text, ACADEMIC_LEVEL_ALIASES)
     field_of_study = first_alias_match(normalized_text, FIELD_ALIASES)
     specialization = first_alias_match(normalized_text, SPECIALIZATION_ALIASES)
-    scholarship_type = first_alias_match(normalized_text, SCHOLARSHIP_TYPE_ALIASES)
+    scholarship_type = detect_scholarship_type(normalized_text)
     languages = infer_languages(normalized_text, detected_language)
     inferred_native_language = native_language_for_origin(origin_country, detected_language)
-    if inferred_native_language and not has_language(languages, inferred_native_language):
+    if inferred_native_language:
         add_language(languages, inferred_native_language, "Native")
     preferred_modality = first_alias_match(normalized_text, MODALITY_ALIASES)
+    budget = detect_budget(normalized_text)
 
     if nationality:
         inferred_fields.append("nationality")
@@ -253,7 +312,10 @@ def infer_profile_from_text(raw_profile_text: str, scholarship_goal: str = "") -
     else:
         inferred_fields.append("preferred_modality")
 
-    warnings.append("Budget is missing.")
+    if budget.get("max_personal_contribution") is not None:
+        inferred_fields.append("budget")
+    else:
+        warnings.append("Budget is missing.")
 
     return {
         "nationality": nationality,
@@ -266,7 +328,7 @@ def infer_profile_from_text(raw_profile_text: str, scholarship_goal: str = "") -
         "interests": interests,
         "target_countries": target_countries,
         "scholarship_type": scholarship_type,
-        "budget": {"currency": "usd", "max_personal_contribution": None},
+        "budget": budget,
         "preferred_modality": preferred_modality,
         "raw_profile_text": raw_profile_text,
         "original_input": combined_text,
@@ -323,7 +385,10 @@ def complete_profile_defaults(profile: dict) -> dict:
 
 
 def normalize_for_detection(value: str) -> str:
-    normalized_value = unicodedata.normalize("NFKD", str(value or "").casefold())
+    normalized_value = unicodedata.normalize(
+        "NFKD",
+        repair_mojibake(str(value or "")).casefold(),
+    )
     without_accents = "".join(
         character
         for character in normalized_value
@@ -331,6 +396,16 @@ def normalize_for_detection(value: str) -> str:
     )
     without_punctuation = re.sub(r"[^a-z0-9+\s-]", " ", without_accents)
     return " ".join(without_punctuation.split())
+
+
+def repair_mojibake(value: str) -> str:
+    if "Ã" not in value and "Â" not in value:
+        return value
+    try:
+        repaired_value = value.encode("latin1").decode("utf-8")
+    except UnicodeError:
+        return value
+    return repaired_value
 
 
 def detect_input_language(normalized_text: str) -> str:
@@ -407,16 +482,67 @@ def infer_languages(normalized_text: str, detected_language: str) -> list[dict]:
 
 def detect_language_level(normalized_text: str, language_alias: str) -> str | None:
     alias_pattern = re.escape(language_alias)
-    after_pattern = rf"\b{alias_pattern}\b(?:\s+(?:e|and|y|et))?\s+({'|'.join(CEFR_LEVELS)}|native|nativo|nativa)\b"
+    level_terms = rf"{'|'.join(CEFR_LEVELS)}|native|nativo|nativa"
+    after_pattern = rf"\b{alias_pattern}\b(?:\s+(?:e|and|y|et))?\s+({level_terms})\b"
     after_match = re.search(after_pattern, normalized_text)
     if after_match:
         return normalize_language_level(after_match.group(1))
 
-    before_pattern = rf"\b({'|'.join(CEFR_LEVELS)}|native|nativo|nativa)\s+{alias_pattern}\b"
+    descriptive_after_pattern = (
+        rf"\b{alias_pattern}\b(?:\s+(?:as|como))?(?:\s+(?:my|mi|a|un|una))?"
+        rf"\s+({level_terms})(?:\s+(?:language|level|nivel|lengua|idioma))?\b"
+    )
+    descriptive_after_match = re.search(descriptive_after_pattern, normalized_text)
+    if descriptive_after_match:
+        return normalize_language_level(descriptive_after_match.group(1))
+
+    at_level_pattern = (
+        rf"\b{alias_pattern}\b\s+(?:at|with|con|en)\s+(?:a|an|un|una)?\s*"
+        rf"({level_terms})(?:\s+(?:level|nivel))?\b"
+    )
+    at_level_match = re.search(at_level_pattern, normalized_text)
+    if at_level_match:
+        return normalize_language_level(at_level_match.group(1))
+
+    before_pattern = rf"\b({level_terms})\s+{alias_pattern}\b"
     before_match = re.search(before_pattern, normalized_text)
     if before_match:
         return normalize_language_level(before_match.group(1))
     return None
+
+
+def detect_budget(normalized_text: str) -> dict:
+    budget = {"currency": "usd", "max_personal_contribution": None}
+    amount_patterns = (
+        r"(?:up to|hasta|maximo|maximum|contribute up to|aportar hasta|contribuir hasta)\s+([0-9][0-9,.\s]*)\s*(usd|dollars|dolares)?",
+        r"([0-9][0-9,.\s]*)\s*(usd|dollars|dolares)\s+(?:per year|al ano|por ano|anuales)?",
+    )
+    for pattern in amount_patterns:
+        match = re.search(pattern, normalized_text)
+        if not match:
+            continue
+        amount = normalize_budget_amount(match.group(1))
+        if amount is not None:
+            budget["max_personal_contribution"] = amount
+            return budget
+    return budget
+
+
+def normalize_budget_amount(value: str) -> int | None:
+    compact_value = re.sub(r"[\s,]", "", value or "")
+    compact_value = re.sub(r"\.(?=\d{3}(?:\D|$))", "", compact_value)
+    try:
+        amount = int(float(compact_value))
+    except (TypeError, ValueError):
+        return None
+    return amount if amount >= 0 else None
+
+
+def detect_scholarship_type(normalized_text: str) -> str | None:
+    for pattern in COMBINED_SCHOLARSHIP_TYPE_PATTERNS:
+        if re.search(pattern, normalized_text):
+            return "Full or partial funding"
+    return first_alias_match(normalized_text, SCHOLARSHIP_TYPE_ALIASES)
 
 
 def normalize_language_level(value: str) -> str:

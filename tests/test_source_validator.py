@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 from agent.source_validator_agent import SourceValidatorAgent
 from api.server import is_policy_accepted_source
+from database.repository import get_untrusted_source_match, save_untrusted_source
 
 
 class SourceValidatorAgentTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.agent = SourceValidatorAgent()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.db_path = Path(self.temp_dir.name) / "sources.db"
+        self.agent = SourceValidatorAgent(db_path=self.db_path)
 
     def test_official_university_source_accepted(self) -> None:
         result = self.agent.validate_source(
@@ -43,6 +49,86 @@ class SourceValidatorAgentTests(unittest.TestCase):
         self.assertEqual(result["decision"], "accept")
         self.assertEqual(result["validation_status"], "accepted")
 
+    def test_embassy_source_accepted(self) -> None:
+        result = self.agent.validate_source(
+            {
+                "title": "Embassy scholarship announcement",
+                "url": "https://ca.usembassy.gov/education/scholarships/",
+                "snippet": "Embassy scholarship funding for international students. Applications open.",
+                "query": "embassy scholarships",
+                "source_family": "embassy",
+                "target_country": "Canada",
+                "priority": 1,
+            }
+        )
+
+        self.assertEqual(result["source_type"], "embassy")
+        self.assertEqual(result["validation_status"], "accepted")
+
+    def test_international_organization_source_accepted(self) -> None:
+        result = self.agent.validate_source(
+            {
+                "title": "World Bank scholarship program",
+                "url": "https://www.worldbank.org/en/programs/scholarships",
+                "snippet": "World Bank scholarship funding for graduate students. Applications open.",
+                "query": "international organization scholarships",
+                "source_family": "international_organization",
+                "target_country": "global",
+                "priority": 1,
+            }
+        )
+
+        self.assertEqual(result["source_type"], "international_organization")
+        self.assertEqual(result["validation_status"], "accepted")
+
+    def test_foundation_source_accepted(self) -> None:
+        result = self.agent.validate_source(
+            {
+                "title": "Foundation fellowship scholarships",
+                "url": "https://www.fordfoundation.org/work/learning/fellowships/",
+                "snippet": "Foundation fellowship and scholarship support for students. Deadline listed.",
+                "query": "foundation scholarships",
+                "source_family": "foundation",
+                "target_country": "global",
+                "priority": 1,
+            }
+        )
+
+        self.assertEqual(result["source_type"], "recognized_foundation")
+        self.assertEqual(result["validation_status"], "accepted")
+
+    def test_company_source_accepted(self) -> None:
+        result = self.agent.validate_source(
+            {
+                "title": "Google student fellowship scholarship",
+                "url": "https://scholarships.google.com/students/fellowship",
+                "snippet": "Official company fellowship and scholarship funding for students.",
+                "query": "company scholarships",
+                "source_family": "company",
+                "target_country": "global",
+                "priority": 1,
+            }
+        )
+
+        self.assertEqual(result["source_type"], "official_company")
+        self.assertEqual(result["validation_status"], "accepted")
+
+    def test_professional_association_source_accepted(self) -> None:
+        result = self.agent.validate_source(
+            {
+                "title": "IEEE Computer Society scholarship",
+                "url": "https://www.computer.org/volunteering/awards/scholarships",
+                "snippet": "Professional association scholarship award for computer science students.",
+                "query": "professional association scholarships",
+                "source_family": "professional_association",
+                "target_country": "global",
+                "priority": 1,
+            }
+        )
+
+        self.assertEqual(result["source_type"], "professional_association")
+        self.assertEqual(result["validation_status"], "accepted")
+
     def test_verified_news_source_accepted_with_warning(self) -> None:
         result = self.agent.validate_source(
             {
@@ -60,6 +146,10 @@ class SourceValidatorAgentTests(unittest.TestCase):
         self.assertEqual(result["validation_status"], "accepted_with_warning")
         self.assertTrue(
             any("informational source" in warning for warning in result["warnings"])
+        )
+        self.assertIn(
+            "Verified informational source; official call should be preferred if available.",
+            result["warnings"],
         )
         self.assertTrue(is_policy_accepted_source(result))
 
@@ -91,8 +181,14 @@ class SourceValidatorAgentTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(result["source_type"], "scholarship_database")
+        self.assertEqual(result["source_type"], "copied_aggregator")
         self.assertEqual(result["decision"], "reject")
+        stored = get_untrusted_source_match(
+            result["url"],
+            result["source_domain"],
+            db_path=self.db_path,
+        )
+        self.assertIsNotNone(stored)
 
     def test_unknown_deadline_adds_warning_without_rejection(self) -> None:
         result = self.agent.validate_source(
@@ -137,7 +233,7 @@ class SourceValidatorAgentTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(result["source_type"], "irrelevant")
+        self.assertEqual(result["source_type"], "non_scholarship_page")
         self.assertEqual(result["decision"], "reject")
 
     def test_malformed_url_rejected_safely(self) -> None:
@@ -152,7 +248,7 @@ class SourceValidatorAgentTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(result["source_type"], "spam_or_low_quality")
+        self.assertEqual(result["source_type"], "spam")
         self.assertEqual(result["decision"], "reject")
 
     def test_validated_source_preserves_metadata(self) -> None:
@@ -173,8 +269,54 @@ class SourceValidatorAgentTests(unittest.TestCase):
         self.assertEqual(result["url"], "https://www.example.edu/scholarships/result")
         self.assertEqual(result["source"], "duckduckgo")
         self.assertEqual(result["query_used"], "fallback query")
+        self.assertEqual(result["source_url"], "https://www.example.edu/scholarships/result")
         self.assertIn("validation_reason", result)
         self.assertIsInstance(result["warnings"], list)
+
+    def test_validated_source_preserves_prompt_2_metadata(self) -> None:
+        result = self.agent.validate_source(
+            {
+                "title": "Scholarship Result",
+                "url": "https://www.example.edu/scholarships/result",
+                "snippet": "Scholarship funding for international students.",
+                "source": "duckduckgo",
+                "query": "original query",
+                "query_used": "fallback query",
+                "query_family": "university",
+                "source_family": "university",
+                "source_domain": "example.edu",
+                "target_country": "Canada",
+                "priority": 2,
+            }
+        )
+
+        self.assertEqual(result["query_family"], "university")
+        self.assertEqual(result["source_family"], "university")
+        self.assertEqual(result["source_domain"], "example.edu")
+
+    def test_known_untrusted_source_rejected_before_classification(self) -> None:
+        save_untrusted_source(
+            "https://bad.example/scholarships",
+            "bad.example",
+            "generic blog",
+            "generic_blog",
+            db_path=self.db_path,
+        )
+
+        result = self.agent.validate_source(
+            {
+                "title": "Scholarship funding",
+                "url": "https://bad.example/new-scholarship",
+                "snippet": "Scholarship funding for students. Applications open.",
+                "query": "scholarships",
+                "target_country": "Canada",
+                "priority": 1,
+            }
+        )
+
+        self.assertEqual(result["validation_status"], "rejected")
+        self.assertEqual(result["validation_reason"], "known_untrusted_source")
+        self.assertIn("known_untrusted_source", result["risk_flags"])
 
 
 if __name__ == "__main__":

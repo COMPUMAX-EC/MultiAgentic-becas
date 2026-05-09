@@ -12,6 +12,9 @@ export type ScholarshipResponseMapping = {
   workflowSteps: WorkflowStep[];
   workflowLogs: string[];
   warnings: string[];
+  status: string;
+  message: string;
+  missingRequiredFields: string[];
   metrics: PipelineMetrics;
   rejectionSummary: RejectionSummary;
   isPartialFailure: boolean;
@@ -44,6 +47,9 @@ export function mapScholarshipResponseDetails(
         country: textValue(item.country) || "Country not specified",
         final_score: scoreValue(item.final_score),
         compatibility_score: scoreValue(item.compatibility_score),
+        compatibility_points: nonNegativeIntValue(item.compatibility_points),
+        max_possible_points: nonNegativeIntValue(item.max_possible_points),
+        source_trust_score: scoreValue(item.source_trust_score),
         eligibility_decision:
           textValue(item.eligibility_decision) || "insufficient_information",
         priority_label: priorityValue(
@@ -59,6 +65,10 @@ export function mapScholarshipResponseDetails(
         ranking_reasons: listValue(item.ranking_reasons),
         risk_factors: listValue(item.risk_factors),
         missing_requirements: listValue(item.missing_requirements),
+        matched_profile_fields: listValue(
+          item.matched_profile_fields || item.matched_factors,
+        ),
+        missing_profile_fields: listValue(item.missing_profile_fields),
         source_url: usefulLink(item.source_url, item.url, item.link) || "",
         official_link: usefulLink(item.official_link),
         application_url: usefulLink(item.application_url, item.apply_url),
@@ -85,6 +95,11 @@ export function mapScholarshipResponseDetails(
     workflowSteps: findWorkflowSteps(payload),
     workflowLogs: findWorkflowLogs(payload),
     warnings,
+    status: isRecord(payload) ? textValue(payload.status) : "",
+    message: isRecord(payload) ? textValue(payload.message) : "",
+    missingRequiredFields: isRecord(payload)
+      ? listValue(payload.missing_required_fields || payload.missingRequiredFields)
+      : [],
     metrics: metricsValue(isRecord(payload) ? payload.metrics : undefined),
     rejectionSummary: rejectionSummaryValue(
       isRecord(payload) ? payload.rejection_summary || payload.rejectionSummary : undefined,
@@ -414,12 +429,24 @@ function optionalNumberValue(value: unknown) {
   return Number.isFinite(count) ? count : undefined;
 }
 
+function nonNegativeIntValue(value: unknown) {
+  const count = optionalNumberValue(value);
+  return typeof count === "number" ? Math.max(0, Math.trunc(count)) : undefined;
+}
+
 function metricsValue(value: unknown): PipelineMetrics {
   const item = isRecord(value) ? value : {};
   return {
     generated_queries_count: countValue(item.generated_queries_count),
     sources_found_count: countValue(item.sources_found_count),
     sources_deduplicated_count: countValue(item.sources_deduplicated_count),
+    expansion_rounds_used: countValue(item.expansion_rounds_used),
+    untrusted_sources_skipped_count: countValue(
+      item.untrusted_sources_skipped_count,
+    ),
+    secondary_guidance_sources_count: countValue(
+      item.secondary_guidance_sources_count,
+    ),
     sources_accepted_count: countValue(item.sources_accepted_count),
     sources_accepted_with_warning_count: countValue(
       item.sources_accepted_with_warning_count,
@@ -442,13 +469,19 @@ function metricsValue(value: unknown): PipelineMetrics {
 function rejectionSummaryValue(value: unknown): RejectionSummary {
   const item = isRecord(value) ? value : {};
   return {
+    duplicate: countValue(item.duplicate),
+    known_untrusted_source: countValue(item.known_untrusted_source),
     non_scholarship_page: countValue(item.non_scholarship_page),
     untrusted_source: countValue(item.untrusted_source),
+    validation_failed: countValue(item.validation_failed),
     expired_or_closed: countValue(item.expired_or_closed),
     no_useful_link: countValue(item.no_useful_link),
-    duplicate: countValue(item.duplicate),
     read_failed: countValue(item.read_failed),
     extraction_failed: countValue(item.extraction_failed),
+    profile_missing_required_fields: countValue(
+      item.profile_missing_required_fields,
+    ),
+    other: countValue(item.other),
   };
 }
 
@@ -542,7 +575,7 @@ function workflowStatusValue(value: unknown): WorkflowStepStatus {
   }
 
   if (status === "running" || status === "current" || status === "in_progress") {
-    return "active";
+    return "running";
   }
 
   if (status === "done" || status === "success" || status === "ok") {

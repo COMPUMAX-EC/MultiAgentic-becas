@@ -6,6 +6,7 @@ from api.server import (
     normalize_recommendation_list,
 )
 from schemas.scholarship_schema import validate_scholarship_extractions
+from schemas.scholarship_schema import resolve_display_link
 
 
 class UsefulLinkHandlingTests(unittest.TestCase):
@@ -43,6 +44,21 @@ class UsefulLinkHandlingTests(unittest.TestCase):
             "https://example.gov/call.pdf",
         )
 
+    def test_schema_resolves_application_and_pdf_fallbacks(self) -> None:
+        self.assertEqual(
+            resolve_display_link(
+                {
+                    "application_url": "https://apply.example.edu/form",
+                    "source_url": "https://source.example.edu/scholarship",
+                }
+            ),
+            "https://apply.example.edu/form",
+        )
+        self.assertEqual(
+            resolve_display_link({"pdf_url": "https://example.edu/call.pdf"}),
+            "https://example.edu/call.pdf",
+        )
+
     def test_no_useful_link_is_excluded_from_final_visible_results(self) -> None:
         records = normalize_recommendation_list(
             [
@@ -73,6 +89,17 @@ class UsefulLinkHandlingTests(unittest.TestCase):
             build_display_link({"source_url": "javascript:alert(1)", "pdf_url": ""}),
             "",
         )
+        self.assertEqual(
+            resolve_display_link(
+                {
+                    "official_link": "javascript:alert(1)",
+                    "application_url": "mailto:apply@example.edu",
+                    "source_url": "C:\\local\\file.html",
+                    "pdf_url": "https://example.edu/call.pdf",
+                }
+            ),
+            "https://example.edu/call.pdf",
+        )
 
     def test_extraction_validation_preserves_source_url_as_display_link(self) -> None:
         scholarships = validate_scholarship_extractions(
@@ -96,6 +123,41 @@ class UsefulLinkHandlingTests(unittest.TestCase):
             scholarships[0]["display_link"],
             "https://source.example.edu/scholarship",
         )
+        self.assertEqual(scholarships[0]["deadline_status"], "unknown")
+
+    def test_extraction_validation_uses_pdf_when_only_pdf_is_traceable(self) -> None:
+        scholarships = validate_scholarship_extractions(
+            [
+                {
+                    "scholarship_name": "PDF Scholarship",
+                    "extraction_confidence": 85,
+                    "application_status": "open",
+                }
+            ],
+            {
+                "source_url": "https://source.example.edu/call.pdf",
+                "pdf_url": "https://source.example.edu/call.pdf",
+            },
+        )
+
+        self.assertEqual(scholarships[0]["pdf_url"], "https://source.example.edu/call.pdf")
+        self.assertEqual(
+            scholarships[0]["display_link"],
+            "https://source.example.edu/call.pdf",
+        )
+
+    def test_extraction_validation_excludes_records_without_useful_link(self) -> None:
+        with self.assertRaises(Exception):
+            validate_scholarship_extractions(
+                [
+                    {
+                        "scholarship_name": "Untraceable Scholarship",
+                        "extraction_confidence": 85,
+                        "application_status": "open",
+                    }
+                ],
+                {},
+            )
 
     def test_dedupe_keeps_better_linked_duplicate(self) -> None:
         deduped = dedupe_scholarships_by_best_link(

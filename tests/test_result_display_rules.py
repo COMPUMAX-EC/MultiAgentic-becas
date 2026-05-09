@@ -52,12 +52,12 @@ class ResultDisplayRulesTests(unittest.TestCase):
             ["Low", "Unclear", "No"],
         )
 
-    def test_sections_sort_by_score_compatibility_then_rank(self) -> None:
+    def test_sections_sort_by_score_compatibility_trust_then_name(self) -> None:
         recommended, _ = split_recommendations(
             [
-                self._result("Third", "high_priority", 80, compatibility=90, rank=3),
+                self._result("Third", "high_priority", 80, compatibility=90, source_trust=70, rank=1),
                 self._result("First", "high_priority", 90, compatibility=70, rank=2),
-                self._result("Second", "high_priority", 80, compatibility=90, rank=1),
+                self._result("Second", "high_priority", 80, compatibility=90, source_trust=100, rank=3),
             ]
         )
 
@@ -93,6 +93,7 @@ class ResultDisplayRulesTests(unittest.TestCase):
         final_score: int,
         compatibility: int = 70,
         rank: int = 1,
+        source_trust: int = 100,
     ) -> dict:
         return {
             "rank": rank,
@@ -100,6 +101,7 @@ class ResultDisplayRulesTests(unittest.TestCase):
             "priority_label": priority_label,
             "final_score": final_score,
             "compatibility_score": compatibility,
+            "source_trust_score": source_trust,
             "source_url": f"https://example.edu/{name.lower().replace(' ', '-')}",
             "display_link": f"https://example.edu/{name.lower().replace(' ', '-')}",
         }

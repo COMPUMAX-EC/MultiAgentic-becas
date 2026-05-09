@@ -59,6 +59,8 @@ class SearchAgentTests(unittest.TestCase):
                 SEARCH_MAX_QUERIES=10,
                 SEARCH_MAX_RESULTS_PER_QUERY=3,
                 SEARCH_MAX_GLOBAL_CANDIDATES=150,
+                MIN_RECOMMENDED_RESULTS_BEFORE_EXPANSION=5,
+                MAX_EXPANSION_ROUNDS=2,
             ),
         ):
             results = SearchAgent().search([self.generated_queries[0]])
@@ -133,6 +135,8 @@ class SearchAgentTests(unittest.TestCase):
                 SEARCH_MAX_QUERIES=1,
                 SEARCH_MAX_RESULTS_PER_QUERY=20,
                 SEARCH_MAX_GLOBAL_CANDIDATES=150,
+                MIN_RECOMMENDED_RESULTS_BEFORE_EXPANSION=5,
+                MAX_EXPANSION_ROUNDS=2,
             ),
         ):
             SearchAgent().search(generated_queries)
@@ -158,6 +162,8 @@ class SearchAgentTests(unittest.TestCase):
                 SEARCH_MAX_QUERIES=10,
                 SEARCH_MAX_RESULTS_PER_QUERY=20,
                 SEARCH_MAX_GLOBAL_CANDIDATES=4,
+                MIN_RECOMMENDED_RESULTS_BEFORE_EXPANSION=5,
+                MAX_EXPANSION_ROUNDS=2,
             ),
         ):
             results = SearchAgent().search([self.generated_queries[0]])
@@ -202,6 +208,185 @@ class SearchAgentTests(unittest.TestCase):
         results = SearchAgent().search([self.generated_queries[0]])
 
         self.assertEqual(results[0]["source_type"], "government")
+
+    @patch("agent.search_agent.search_web")
+    def test_search_preserves_query_family_and_source_family(self, mock_search_web) -> None:
+        mock_search_web.return_value = [
+            {
+                "title": "University Scholarship",
+                "url": "https://example.edu/scholarship",
+                "snippet": "Scholarship for international students.",
+                "source": "duckduckgo",
+                "query": "ignored",
+            }
+        ]
+        query = dict(self.generated_queries[0])
+        query["query_family"] = "university"
+        query["source_family"] = "university"
+        query["expansion_round"] = 1
+
+        results = SearchAgent().search([query])
+
+        self.assertEqual(results[0]["query_family"], "university")
+        self.assertEqual(results[0]["source_family"], "university")
+        self.assertEqual(results[0]["expansion_round"], 1)
+
+    @patch("agent.search_agent.search_web")
+    def test_search_deduplicates_tracking_parameter_urls_and_keeps_metadata(
+        self,
+        mock_search_web,
+    ) -> None:
+        mock_search_web.return_value = [
+            {
+                "title": "Scholarship One",
+                "url": "https://example.org/scholarship?utm_source=newsletter",
+                "snippet": "Short.",
+                "source": "duckduckgo",
+                "query": "ignored",
+            },
+            {
+                "title": "Scholarship One",
+                "url": "https://example.org/scholarship",
+                "snippet": "Longer scholarship snippet with useful metadata.",
+                "source": "duckduckgo",
+                "query": "ignored",
+            },
+        ]
+        query = dict(self.generated_queries[0])
+        query["query_family"] = "destination"
+        query["source_family"] = "foundation"
+
+        results = SearchAgent().search([query])
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["url"], "https://example.org/scholarship")
+        self.assertEqual(results[0]["source_family"], "foundation")
+        self.assertIn("Longer scholarship snippet", results[0]["snippet"])
+
+    @patch("agent.search_agent.search_web")
+    def test_expansion_round_runs_when_initial_candidate_count_is_weak(
+        self,
+        mock_search_web,
+    ) -> None:
+        mock_search_web.side_effect = [
+            [
+                {
+                    "title": "Initial Result",
+                    "url": "https://example.org/initial",
+                    "snippet": "Scholarship.",
+                    "source": "duckduckgo",
+                    "query": "ignored",
+                }
+            ],
+            [
+                {
+                    "title": "Expansion Result",
+                    "url": "https://example.edu/expansion",
+                    "snippet": "Expanded scholarship.",
+                    "source": "duckduckgo",
+                    "query": "ignored",
+                }
+            ],
+        ]
+        queries = [
+            {
+                "query": "initial scholarship query",
+                "target_country": "global",
+                "reason": "Initial.",
+                "priority": 1,
+                "query_family": "nationality",
+                "source_family": "unknown",
+                "expansion_round": 0,
+            },
+            {
+                "query": "expanded university scholarship query",
+                "target_country": "global",
+                "reason": "Expansion.",
+                "priority": 2,
+                "query_family": "university",
+                "source_family": "university",
+                "expansion_round": 1,
+            },
+        ]
+
+        with patch(
+            "agent.search_agent.settings",
+            SimpleNamespace(
+                SEARCH_MAX_QUERIES=10,
+                SEARCH_MAX_RESULTS_PER_QUERY=20,
+                SEARCH_MAX_GLOBAL_CANDIDATES=300,
+                MIN_RECOMMENDED_RESULTS_BEFORE_EXPANSION=5,
+                MAX_EXPANSION_ROUNDS=2,
+            ),
+        ):
+            agent = SearchAgent()
+            results = agent.search(queries)
+
+        self.assertEqual(mock_search_web.call_count, 2)
+        self.assertEqual(agent.last_expansion_rounds_used, 1)
+        self.assertEqual(len(results), 2)
+
+    @patch("agent.search_agent.search_web")
+    def test_expansion_round_is_skipped_when_initial_candidates_are_enough(
+        self,
+        mock_search_web,
+    ) -> None:
+        mock_search_web.return_value = [
+            {
+                "title": f"Initial Result {index}",
+                "url": f"https://example.org/initial-{index}",
+                "snippet": "Scholarship.",
+                "source": "duckduckgo",
+                "query": "ignored",
+            }
+            for index in range(5)
+        ]
+        queries = [
+            {
+                "query": "initial scholarship query",
+                "target_country": "global",
+                "reason": "Initial.",
+                "priority": 1,
+                "query_family": "nationality",
+                "source_family": "unknown",
+                "expansion_round": 0,
+            },
+            {
+                "query": "expanded university scholarship query",
+                "target_country": "global",
+                "reason": "Expansion.",
+                "priority": 2,
+                "query_family": "university",
+                "source_family": "university",
+                "expansion_round": 1,
+            },
+        ]
+
+        with patch(
+            "agent.search_agent.settings",
+            SimpleNamespace(
+                SEARCH_MAX_QUERIES=10,
+                SEARCH_MAX_RESULTS_PER_QUERY=20,
+                SEARCH_MAX_GLOBAL_CANDIDATES=300,
+                MIN_RECOMMENDED_RESULTS_BEFORE_EXPANSION=5,
+                MAX_EXPANSION_ROUNDS=2,
+            ),
+        ):
+            agent = SearchAgent()
+            results = agent.search(queries)
+
+        self.assertEqual(mock_search_web.call_count, 1)
+        self.assertEqual(agent.last_expansion_rounds_used, 0)
+        self.assertEqual(len(results), 5)
+
+    def test_default_search_limits_are_centralized_in_settings(self) -> None:
+        from config.settings import settings
+
+        self.assertGreaterEqual(settings.SEARCH_MAX_QUERIES, 30)
+        self.assertGreaterEqual(settings.SEARCH_MAX_RESULTS_PER_QUERY, 20)
+        self.assertGreaterEqual(settings.SEARCH_MAX_GLOBAL_CANDIDATES, 300)
+        self.assertGreaterEqual(settings.MIN_RECOMMENDED_RESULTS_BEFORE_EXPANSION, 5)
+        self.assertGreaterEqual(settings.MAX_EXPANSION_ROUNDS, 2)
 
 
 if __name__ == "__main__":

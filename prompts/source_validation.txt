@@ -2,13 +2,13 @@ Classify this scholarship search result before page reading.
 
 Return JSON only. Do not include markdown, explanations, or extra text.
 Classify source_type, assign reliability_score from 0 to 100, assign relevance_score from 0 to 100, choose decision, and list reasons and risk_flags.
-Allowed source_type values: university, institute, institution, government, organization, foundation, company, international_organization, official_pdf, verified_news, verified_newspaper, verified_magazine, verified_education_portal, verified_scholarship_information_source, scholarship_database, unknown, generic_blog, irrelevant, spam_or_low_quality, expired_or_closed.
+Allowed source_type values: university, institute, institution, government, embassy, organization, recognized_foundation, official_company, professional_association, international_organization, official_pdf, verified_news, verified_newspaper, verified_magazine, verified_education_portal, verified_scholarship_information_source, copied_aggregator, unknown_unverified, generic_blog, non_scholarship_page, spam, expired_or_closed.
 Allowed decision values: accept, review, reject.
-Use accept for official or directly authoritative sources such as university, government, institute, institution, organization, foundation, company, international organization, or official PDF pages.
+Use accept for official or directly authoritative sources such as university, government, embassy, international organization, recognized foundation, official company, professional association, or official PDF pages.
 Use review for verified informational sources such as reputable news, newspapers, magazines, education portals, or scholarship information sources that clearly discuss scholarships but are not direct official application pages.
 Reject only clearly invalid sources: generic blogs with no authority, spam, copied aggregators without traceable verification, unrelated content, malformed URLs, unreadable/empty pages, malicious-looking URLs, or clearly expired/closed opportunities.
 Do not reject only because language, nationality, deadline, budget, modality, benefits, or requirements are missing.
-Use warnings/risk_flags for informational source, unknown deadline, incomplete requirements, and source type uncertainty.
+Use risk_flags for secondary_guidance_only, informational_source, official_call_not_confirmed, deadline_unknown, incomplete requirements, and source type uncertainty.
 
 Expected JSON format:
 {

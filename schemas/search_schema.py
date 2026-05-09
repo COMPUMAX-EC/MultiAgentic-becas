@@ -5,6 +5,7 @@ from utils.url_utils import normalize_useful_url
 
 MAX_GENERATED_QUERIES = settings.SEARCH_MAX_QUERIES
 REQUIRED_QUERY_FIELDS = ("query", "target_country", "reason", "priority")
+OPTIONAL_QUERY_FIELDS = ("query_family", "source_family", "expansion_round")
 REQUIRED_RESULT_FIELDS = (
     "title",
     "url",
@@ -65,6 +66,7 @@ def validate_generated_queries(
                 "target_country": target_country,
                 "reason": reason,
                 "priority": len(cleaned_queries) + 1,
+                **_optional_query_metadata(raw_query),
             }
         )
 
@@ -135,9 +137,30 @@ def validate_search_results(raw_results: object) -> list[dict]:
 
 
 def _optional_search_metadata(raw_result: dict) -> dict:
-    metadata: dict[str, str] = {}
-    for field in ("canonical_url", "source_domain", "source_type"):
+    metadata: dict[str, str | int] = {}
+    for field in (
+        "canonical_url",
+        "source_domain",
+        "source_type",
+        "query_family",
+        "source_family",
+    ):
         value = _clean_text(raw_result.get(field))
         if value:
             metadata[field] = value
+    expansion_round = _clean_priority(raw_result.get("expansion_round"))
+    if expansion_round is not None:
+        metadata["expansion_round"] = expansion_round
+    return metadata
+
+
+def _optional_query_metadata(raw_query: dict) -> dict:
+    metadata: dict[str, str | int] = {}
+    for field in ("query_family", "source_family"):
+        value = _clean_text(raw_query.get(field))
+        if value:
+            metadata[field] = value
+    expansion_round = _clean_priority(raw_query.get("expansion_round"))
+    if expansion_round is not None:
+        metadata["expansion_round"] = max(0, expansion_round)
     return metadata
