@@ -1,196 +1,169 @@
-from __future__ import annotations
+"""
+MultiAgentic-Becas — Web Search Tool
+Busca becas usando DuckDuckGo y extrae información estructurada con BeautifulSoup.
+"""
+import re
+from loguru import logger
+from duckduckgo_search import DDGS
+import requests
+from bs4 import BeautifulSoup
 
-import socket
-import subprocess
-from html import unescape
-from html.parser import HTMLParser
-from urllib.parse import parse_qs, quote_plus, urlparse
-import urllib.error
-import urllib.request
-
-from config.settings import settings
-
-
-class WebSearchError(RuntimeError):
-    pass
+from models.schemas import Scholarship, FundingType, AcademicLevel
 
 
-class DuckDuckGoHTMLParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.results: list[dict] = []
-        self._in_result = False
-        self._result_div_depth = 0
-        self._capture_title = False
-        self._capture_snippet = False
-        self._current_result: dict = {}
-        self._title_parts: list[str] = []
-        self._snippet_parts: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        attributes = dict(attrs)
-        class_name = attributes.get("class", "")
-
-        if tag == "div" and "result results_links" in class_name:
-            self._in_result = True
-            self._result_div_depth = 1
-            self._current_result = {}
-            self._title_parts = []
-            self._snippet_parts = []
-            return
-
-        if not self._in_result:
-            return
-
-        if tag == "div":
-            self._result_div_depth += 1
-
-        if tag == "a" and attributes.get("class") == "result__a":
-            self._capture_title = True
-            href = attributes.get("href")
-            if href:
-                self._current_result["url"] = _extract_duckduckgo_target_url(href)
-            return
-
-        if tag == "a" and attributes.get("class") == "result__snippet":
-            self._capture_snippet = True
-
-    def handle_endtag(self, tag: str) -> None:
-        if not self._in_result:
-            return
-
-        if tag == "a":
-            self._capture_title = False
-            self._capture_snippet = False
-            return
-
-        if tag == "div":
-            self._result_div_depth -= 1
-            if self._result_div_depth > 0:
-                return
-
-            if self._current_result:
-                title = _clean_text("".join(self._title_parts))
-                snippet = _clean_text("".join(self._snippet_parts))
-                url = _clean_text(self._current_result.get("url", ""))
-
-                if title and snippet and url:
-                    self.results.append(
-                        {
-                            "title": title,
-                            "url": url,
-                            "snippet": snippet,
-                        }
-                    )
-
-            self._in_result = False
-            self._result_div_depth = 0
-            self._current_result = {}
-            self._title_parts = []
-            self._snippet_parts = []
-
-    def handle_data(self, data: str) -> None:
-        if self._capture_title:
-            self._title_parts.append(data)
-        elif self._capture_snippet:
-            self._snippet_parts.append(data)
-
-
-def search_web(query: str) -> list[dict]:
-    if not query or not query.strip():
-        raise WebSearchError("Search query cannot be empty.")
-
-    provider = settings.SEARCH_PROVIDER.strip().lower()
-    if provider != "duckduckgo":
-        raise WebSearchError(f"Unsupported search provider: {settings.SEARCH_PROVIDER}")
-
-    search_url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
-    request = urllib.request.Request(
-        url=search_url,
-        headers={"User-Agent": "Mozilla/5.0"},
-        method="GET",
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
     )
+}
+
+TIMEOUT = 8  # segundos por request
+
+
+def search_scholarships(query: str, max_results: int = 5) -> list[Scholarship]:
+    """
+    Busca becas en la web usando DuckDuckGo y parsea los resultados.
+
+    Args:
+        query: Término de búsqueda
+        max_results: Máximo de resultados a procesar
+
+    Returns:
+        Lista de Scholarship encontradas y estructuradas
+    """
+    scholarships: list[Scholarship] = []
 
     try:
-        html_content = _fetch_html_with_urllib(request)
-    except socket.timeout as exc:
-        raise WebSearchError(
-            f"Search request timed out after {settings.SEARCH_TIMEOUT_SECONDS} seconds."
-        ) from exc
-    except urllib.error.URLError as exc:
-        raise WebSearchError(
-            f"Search request failed for provider '{settings.SEARCH_PROVIDER}'."
-        ) from exc
+        with DDGS() as ddgs:
+            results = list(ddgs.text(
+                query,
+                max_results=max_results * 2,  # Pedimos más, filtramos después
+                region="wt-wt",
+                safesearch="moderate",
+            ))
+    except Exception as e:
+        logger.warning(f"DuckDuckGo search error: {e}")
+        return []
 
-    parser = DuckDuckGoHTMLParser()
-    parser.feed(html_content)
-    if not parser.results:
-        html_content = _fetch_html_with_powershell(search_url)
-        parser = DuckDuckGoHTMLParser()
-        parser.feed(html_content)
+    for result in results[:max_results]:
+        url = result.get("href", "")
+        title = result.get("title", "Beca sin título")
+        body = result.get("body", "")
 
-    results: list[dict] = []
-    for result in parser.results[: settings.SEARCH_MAX_RESULTS_PER_QUERY]:
-        results.append(
-            {
-                "title": result["title"],
-                "url": result["url"],
-                "snippet": result["snippet"],
-                "source": settings.SEARCH_PROVIDER,
-                "query": query.strip(),
-            }
+        if not url or _is_irrelevant_url(url):
+            continue
+
+        # Enriquecer con contenido de la página cuando sea posible
+        page_content = _fetch_page_content(url)
+
+        scholarship = _build_scholarship(
+            name=title,
+            url=url,
+            description=body,
+            page_content=page_content,
         )
+        if scholarship:
+            scholarships.append(scholarship)
 
-    return results
-
-
-def _extract_duckduckgo_target_url(raw_url: str) -> str:
-    if raw_url.startswith("//"):
-        raw_url = f"https:{raw_url}"
-
-    parsed_url = urlparse(raw_url)
-    query_parameters = parse_qs(parsed_url.query)
-    target_url = query_parameters.get("uddg", [raw_url])[0]
-    return unescape(target_url)
+    return scholarships
 
 
-def _clean_text(value: str) -> str:
-    return " ".join(unescape(value).split())
-
-
-def _fetch_html_with_urllib(request: urllib.request.Request) -> str:
-    with urllib.request.urlopen(
-        request, timeout=settings.SEARCH_TIMEOUT_SECONDS
-    ) as response:
-        return response.read().decode("utf-8", errors="ignore")
-
-
-def _fetch_html_with_powershell(search_url: str) -> str:
-    command = [
-        "powershell",
-        "-NoProfile",
-        "-Command",
-        (
-            "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; "
-            f"(Invoke-WebRequest -UseBasicParsing '{search_url}').Content"
-        ),
+def _is_irrelevant_url(url: str) -> bool:
+    """Filtra URLs que claramente no son de becas."""
+    skip_patterns = [
+        "youtube.com", "facebook.com", "twitter.com", "instagram.com",
+        "reddit.com", "wikipedia.org", "amazon.com",
     ]
+    return any(p in url.lower() for p in skip_patterns)
+
+
+def _fetch_page_content(url: str) -> str:
+    """Descarga el contenido de una URL y extrae texto limpio."""
+    try:
+        response = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "lxml")
+
+        # Eliminar scripts y estilos
+        for tag in soup(["script", "style", "nav", "footer", "header"]):
+            tag.decompose()
+
+        text = soup.get_text(separator=" ", strip=True)
+        # Limitar a 3000 caracteres
+        return text[:3000]
+
+    except Exception:
+        return ""
+
+
+def _build_scholarship(
+    name: str,
+    url: str,
+    description: str,
+    page_content: str,
+) -> Scholarship | None:
+    """
+    Construye un objeto Scholarship a partir del texto disponible.
+    Usa heurísticas simples; el EvaluatorAgent hará el análisis profundo.
+    """
+    combined_text = f"{name} {description} {page_content}".lower()
+
+    # Detectar tipo de financiamiento
+    if "fully funded" in combined_text or "full scholarship" in combined_text or "beca completa" in combined_text:
+        funding_type = FundingType.FULL
+    elif "tuition" in combined_text and "stipend" not in combined_text:
+        funding_type = FundingType.TUITION_ONLY
+    elif "partial" in combined_text or "parcial" in combined_text:
+        funding_type = FundingType.PARTIAL
+    else:
+        funding_type = FundingType.FULL  # Asumir completa por defecto
+
+    # Detectar niveles académicos mencionados
+    eligible_levels = []
+    level_map = {
+        "undergraduate": AcademicLevel.UNDERGRADUATE,
+        "bachelor": AcademicLevel.UNDERGRADUATE,
+        "master": AcademicLevel.MASTER,
+        "phd": AcademicLevel.PHD,
+        "doctoral": AcademicLevel.PHD,
+        "postdoc": AcademicLevel.POSTDOC,
+    }
+    for keyword, level in level_map.items():
+        if keyword in combined_text and level not in eligible_levels:
+            eligible_levels.append(level)
+
+    # Detectar deadline (patrón básico)
+    deadline = None
+    deadline_patterns = [
+        r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+20\d{2}\b",
+        r"\b\d{1,2}/\d{1,2}/20\d{2}\b",
+        r"\b20\d{2}-\d{2}-\d{2}\b",
+    ]
+    for pattern in deadline_patterns:
+        match = re.search(pattern, combined_text, re.IGNORECASE)
+        if match:
+            deadline = match.group(0)
+            break
+
+    # Extraer proveedor del dominio
+    domain_match = re.search(r"https?://(?:www\.)?([^/]+)", url)
+    provider = domain_match.group(1) if domain_match else "Desconocido"
+
+    # Descripción limpia: preferir body de DuckDuckGo
+    clean_desc = description if description else page_content[:300]
 
     try:
-        completed_process = subprocess.run(
-            command,
-            check=True,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="ignore",
-            timeout=settings.SEARCH_TIMEOUT_SECONDS,
+        return Scholarship(
+            name=name,
+            provider=provider,
+            url=url,
+            description=clean_desc,
+            funding_type=funding_type,
+            deadline=deadline,
+            eligible_levels=eligible_levels,
         )
-    except subprocess.TimeoutExpired as exc:
-        raise WebSearchError(
-            f"Search request timed out after {settings.SEARCH_TIMEOUT_SECONDS} seconds."
-        ) from exc
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise WebSearchError("Fallback search request failed.") from exc
-
-    return completed_process.stdout or ""
+    except Exception as e:
+        logger.debug(f"Error construyendo Scholarship: {e}")
+        return None
