@@ -23,6 +23,10 @@ dependencies = [
     "rich",
     "psutil>=5.9.0",
 
+    # ── API REST (api/main.py — FastAPI backend) ──────────────────────────────
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+
     # ── Frontend ─────────────────────────────────────────────────────────────
     "streamlit>=1.35.0",
     "streamlit-extras",
