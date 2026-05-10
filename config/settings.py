@@ -4,6 +4,12 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# Load .env file before reading any os.getenv() — this must run first.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
+
+
 
 @dataclass(frozen=True)
 class Settings:
