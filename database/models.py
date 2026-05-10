@@ -111,4 +111,29 @@ CREATE_TABLE_STATEMENTS = (
         UNIQUE(profile_signature, scholarship_key)
     )
     """,
+    # ── Auth: Google-authenticated users ─────────────────────────────────────
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        google_sub    TEXT    UNIQUE NOT NULL,
+        email         TEXT    NOT NULL,
+        name          TEXT,
+        picture_url   TEXT,
+        created_at    TEXT    NOT NULL,
+        last_login_at TEXT    NOT NULL
+    )
+    """,
+    # ── Auth: per-user daily query log ───────────────────────────────────────
+    """
+    CREATE TABLE IF NOT EXISTS user_queries (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        google_sub TEXT NOT NULL REFERENCES users(google_sub) ON DELETE CASCADE,
+        query_hash TEXT NOT NULL,
+        used_at    TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_user_queries_sub
+    ON user_queries(google_sub, used_at)
+    """,
 )

@@ -585,3 +585,89 @@ def update_scholarship_last_seen(
         connection.commit()
     finally:
         close_connection(connection)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Auth — user accounts and daily quota
+# ══════════════════════════════════════════════════════════════════════════════
+
+def upsert_user(
+    google_sub: str,
+    email: str,
+    name: str | None = None,
+    picture_url: str | None = None,
+    db_path: str | Path | None = None,
+) -> None:
+    """
+    Insert a new user or update last_login_at on subsequent logins.
+    Uses google_sub as the stable unique key (immutable across email changes).
+    """
+    init_database(db_path)
+    connection = get_connection(db_path)
+    try:
+        now = _now_iso()
+        connection.execute(
+            """
+            INSERT INTO users (google_sub, email, name, picture_url, created_at, last_login_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(google_sub) DO UPDATE SET
+                email         = excluded.email,
+                name          = excluded.name,
+                picture_url   = excluded.picture_url,
+                last_login_at = excluded.last_login_at
+            """,
+            (google_sub, email, name, picture_url, now, now),
+        )
+        connection.commit()
+    finally:
+        close_connection(connection)
+
+
+def get_daily_query_count(
+    google_sub: str,
+    window_hours: int = 24,
+    db_path: str | Path | None = None,
+) -> int:
+    """
+    Return the number of queries the user has made in the last `window_hours` hours.
+    Uses a rolling window anchored to the current UTC time.
+    """
+    init_database(db_path)
+    connection = get_connection(db_path)
+    try:
+        modifier = f"-{int(window_hours)} hours"
+        row = connection.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM user_queries
+            WHERE google_sub = ?
+              AND datetime(used_at) > datetime('now', ?)
+            """,
+            (google_sub, modifier),
+        ).fetchone()
+        return int(row["cnt"]) if row else 0
+    finally:
+        close_connection(connection)
+
+
+def record_user_query(
+    google_sub: str,
+    query_hash: str,
+    db_path: str | Path | None = None,
+) -> None:
+    """
+    Record that a user consumed one query.
+    Stores a SHA-256 hash of the query text — never the raw text.
+    """
+    init_database(db_path)
+    connection = get_connection(db_path)
+    try:
+        connection.execute(
+            """
+            INSERT INTO user_queries (google_sub, query_hash, used_at)
+            VALUES (?, ?, ?)
+            """,
+            (google_sub, query_hash, _now_iso()),
+        )
+        connection.commit()
+    finally:
+        close_connection(connection)

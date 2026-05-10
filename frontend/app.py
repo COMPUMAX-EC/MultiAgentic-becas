@@ -30,6 +30,13 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;}
 </style>
 """, unsafe_allow_html=True)
 
+# ── Handle OAuth callback if it lands on home ─────────────────────────────────
+try:
+    from auth.session import get_current_user as _get_user
+    _get_user()   # processes ?code= params if present, stores session token
+except Exception:
+    pass
+
 with st.sidebar:
     st.markdown("### 🎓 MultiAgentic\n**Scholarships**")
     st.markdown("---")
@@ -38,6 +45,12 @@ with st.sidebar:
     st.page_link("pages/2_Monitor.py", label="📊 System Monitor")
     st.markdown("---")
     st.caption("AMD Developer Hackathon 2026")
+    try:
+        from frontend.utils.auth_ui import render_auth_sidebar
+        render_auth_sidebar()
+    except Exception:
+        pass
+
 
 # Backend indicator
 try:

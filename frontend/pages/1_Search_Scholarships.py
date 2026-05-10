@@ -1,4 +1,4 @@
-"""1_Search_Scholarships.py — Semantic scholarship search page."""
+"""1_Search_Scholarships.py — Semantic scholarship search page (auth + quota gated)."""
 from __future__ import annotations
 import json, sys
 from pathlib import Path
@@ -28,9 +28,12 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;}
 .tag-closed{background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);}
 .tag-f{background:rgba(139,92,246,.12);color:#c084fc;border:1px solid rgba(139,92,246,.25);}
 .reason{background:rgba(99,102,241,.08);border-left:3px solid #6366f1;border-radius:0 8px 8px 0;padding:.5rem 1rem;margin-top:.8rem;font-size:.83rem;color:#94a3b8;font-style:italic;}
+.quota-bar-wrap{background:rgba(15,23,42,.8);border:1px solid rgba(99,102,241,.2);border-radius:10px;padding:.7rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;}
+.quota-exhausted{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:14px;padding:2rem;text-align:center;margin-top:2rem;}
 </style>
 """, unsafe_allow_html=True)
 
+# ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 🎓 MultiAgentic\n**Scholarships**")
     st.markdown("---")
@@ -49,16 +52,96 @@ with st.sidebar:
         </div>""", unsafe_allow_html=True)
     except Exception:
         pass
+    # Auth widget
+    try:
+        from frontend.utils.auth_ui import render_auth_sidebar
+        render_auth_sidebar()
+    except Exception:
+        pass
 
+# ── Auth gate — MUST be authenticated to search ──────────────────────────────
+try:
+    from auth.session import require_login
+    from auth.quota import QuotaExceededError, consume_query, get_quota_status
+    _AUTH_AVAILABLE = True
+    user = require_login()   # stops page here if not logged in
+except ImportError:
+    _AUTH_AVAILABLE = False
+    user = None
+
+# ── Page header ───────────────────────────────────────────────────────────────
 st.markdown("<h1 style='color:#e2e8f0;font-size:1.9rem;'>🔍 Search Scholarships</h1>", unsafe_allow_html=True)
 st.markdown("<p style='color:#64748b;'>Describe what you're looking for — the AI model semantically ranks scholarships from the knowledge base.</p>", unsafe_allow_html=True)
 
-query = st.text_area("Query", placeholder="e.g. 'Colombian systems engineering student looking for a fully funded master's in AI in Europe'", height=90, label_visibility="collapsed")
-c1, c2 = st.columns([1,6])
-with c1:
-    search = st.button("🔍 Search", type="primary", use_container_width=True)
+# ── Daily quota banner ────────────────────────────────────────────────────────
+_quota_ok = True
+if _AUTH_AVAILABLE and user:
+    status    = get_quota_status(user.sub)
+    used      = status["used"]
+    limit     = status["limit"]
+    remaining = status["remaining"]
+    pct       = int((used / limit) * 100)
+    qcolor    = "#4ade80" if remaining > 2 else ("#facc15" if remaining > 0 else "#ef4444")
 
-if search and query.strip():
+    st.markdown(
+        f"<div class='quota-bar-wrap'>"
+        f"<div style='flex:1;'>"
+        f"<div style='display:flex;justify-content:space-between;font-size:.78rem;"
+        f"color:#64748b;margin-bottom:.35rem;'>"
+        f"<span>🔎 Daily search quota</span>"
+        f"<span style='color:{qcolor};font-weight:600;'>{used} / {limit} used</span>"
+        f"</div>"
+        f"<div style='background:rgba(30,41,59,.8);border-radius:6px;height:7px;overflow:hidden;'>"
+        f"<div style='width:{pct}%;height:100%;background:{qcolor};"
+        f"border-radius:6px;transition:width .4s;'></div>"
+        f"</div></div>"
+        f"<div style='font-size:.72rem;color:#334155;white-space:nowrap;'>"
+        f"{'✅ ' + str(remaining) + ' left' if remaining > 0 else '⛔ Quota reached'}"
+        f"</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    if remaining <= 0:
+        _quota_ok = False
+        st.markdown("""
+<div class='quota-exhausted'>
+  <div style='font-size:2.5rem;margin-bottom:.5rem;'>⛔</div>
+  <div style='font-size:1.1rem;font-weight:600;color:#f87171;margin-bottom:.4rem;'>
+    Daily limit reached
+  </div>
+  <div style='color:#64748b;font-size:.9rem;'>
+    You've used all <strong style='color:#f87171;'>5 searches</strong> for today.<br>
+    Your quota resets automatically after <strong>24 hours</strong>.
+  </div>
+</div>""", unsafe_allow_html=True)
+
+# ── Search form ───────────────────────────────────────────────────────────────
+query = st.text_area(
+    "Query",
+    placeholder="e.g. 'Colombian systems engineering student looking for a fully funded master's in AI in Europe'",
+    height=90,
+    label_visibility="collapsed",
+    disabled=not _quota_ok,
+)
+c1, c2 = st.columns([1, 6])
+with c1:
+    search = st.button(
+        "🔍 Search",
+        type="primary",
+        use_container_width=True,
+        disabled=not _quota_ok,
+    )
+
+# ── Execute search ────────────────────────────────────────────────────────────
+if search and query.strip() and _quota_ok:
+    # Consume quota BEFORE running the (expensive) search
+    if _AUTH_AVAILABLE and user:
+        try:
+            consume_query(user.sub, query)
+        except QuotaExceededError as qe:
+            st.error(f"⛔ {qe}")
+            st.stop()
+
     with st.spinner("🤖 Running semantic search…"):
         try:
             from frontend.utils.scholarship_search import semantic_search_scholarships
@@ -77,8 +160,8 @@ if search and query.strip():
             try: return json.loads(v or "[]")
             except: return []
         for s in results:
-            status = (s.get("application_status") or "unknown").lower()
-            sc = "tag-open" if "open" in status else ("tag-closed" if status in ("closed","expired") else "tag-l")
+            status_val = (s.get("application_status") or "unknown").lower()
+            sc = "tag-open" if "open" in status_val else ("tag-closed" if status_val in ("closed","expired") else "tag-l")
             fields = "".join(f'<span class="tag tag-f">{f}</span>' for f in pl(s.get("fields_json") or s.get("fields",[]))[:4])
             reason_html = f'<div class="reason">✨ {s.get("relevance_reason","")}</div>' if s.get("relevance_reason") else ""
             url = s.get("source_url","")
@@ -90,8 +173,9 @@ if search and query.strip():
                 <div class="s-inst">{s.get('institution','')}</div>
                 <div><span class="tag tag-c">🌍 {s.get('country','—')}</span>
                 <span class="tag tag-l">🎓 {s.get('academic_level','—')}</span>
-                <span class="tag {sc}">● {status}</span>{fields}</div>
+                <span class="tag {sc}">● {status_val}</span>{fields}</div>
                 <div style="margin-top:.7rem;display:flex;gap:1.5rem;">{dl_html}{url_html}</div>
                 {reason_html}</div>""", unsafe_allow_html=True)
-elif not query.strip():
+
+elif not query.strip() and _quota_ok:
     st.markdown("<div style='text-align:center;padding:3rem;color:#475569;'><div style='font-size:4rem;'>🔍</div><div style='margin-top:1rem;font-size:1.1rem;'>Type a query above and press Search.</div></div>", unsafe_allow_html=True)

@@ -71,6 +71,12 @@ with st.sidebar:
     interval = st.slider("Interval (s)", 2, 30, 5)
     if st.button("🔄 Refresh Now", use_container_width=True):
         st.rerun()
+    try:
+        from frontend.utils.auth_ui import render_auth_sidebar
+        render_auth_sidebar()
+    except Exception:
+        pass
+
 
 now_str = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
 st.markdown(f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;'>"
