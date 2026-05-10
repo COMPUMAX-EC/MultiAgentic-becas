@@ -1,169 +1,103 @@
 """
-MultiAgentic-Becas — Web Search Tool
-Busca becas usando DuckDuckGo y extrae información estructurada con BeautifulSoup.
+tools/web_search.py — DuckDuckGo web search returning raw result dicts.
+
+Provides:
+    search_web(query, max_results) -> list[dict]
+    WebSearchError                 -> raised on unrecoverable search failures
+
+Each result dict has the keys expected by SearchAgent:
+    url, canonical_url, title, snippet, source
 """
-import re
+from __future__ import annotations
+
+import time
+
 from loguru import logger
-from duckduckgo_search import DDGS
-import requests
-from bs4 import BeautifulSoup
-
-from models.schemas import Scholarship, FundingType, AcademicLevel
 
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
-}
-
-TIMEOUT = 8  # segundos por request
+class WebSearchError(RuntimeError):
+    """Raised when the web search cannot be completed."""
 
 
-def search_scholarships(query: str, max_results: int = 5) -> list[Scholarship]:
+def search_web(query: str, max_results: int | None = None) -> list[dict]:
     """
-    Busca becas en la web usando DuckDuckGo y parsea los resultados.
+    Search the web using DuckDuckGo and return raw result dicts.
 
     Args:
-        query: Término de búsqueda
-        max_results: Máximo de resultados a procesar
+        query:       Search query string.
+        max_results: Maximum number of results to return.
+                     Defaults to settings.SEARCH_MAX_RESULTS_PER_QUERY if available.
 
     Returns:
-        Lista de Scholarship encontradas y estructuradas
+        List of dicts with keys: url, canonical_url, title, snippet, source.
+
+    Raises:
+        WebSearchError: If DuckDuckGo is unreachable or returns an error.
     """
-    scholarships: list[Scholarship] = []
+    if max_results is None:
+        try:
+            from config.settings import settings
+            max_results = settings.SEARCH_MAX_RESULTS_PER_QUERY
+        except Exception:
+            max_results = 10
 
     try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(
-                query,
-                max_results=max_results * 2,  # Pedimos más, filtramos después
-                region="wt-wt",
-                safesearch="moderate",
-            ))
-    except Exception as e:
-        logger.warning(f"DuckDuckGo search error: {e}")
-        return []
+        from duckduckgo_search import DDGS
+    except ImportError as exc:
+        raise WebSearchError(
+            "duckduckgo-search is not installed. Run: uv add duckduckgo-search"
+        ) from exc
 
-    for result in results[:max_results]:
-        url = result.get("href", "")
-        title = result.get("title", "Beca sin título")
-        body = result.get("body", "")
+    raw_results: list[dict] = []
+    last_exc: Exception | None = None
 
-        if not url or _is_irrelevant_url(url):
+    for attempt in range(1, 4):   # up to 3 attempts with back-off
+        try:
+            with DDGS() as ddgs:
+                raw_results = list(
+                    ddgs.text(
+                        query,
+                        max_results=max_results,
+                        region="wt-wt",
+                        safesearch="moderate",
+                    )
+                )
+            break   # success
+        except Exception as exc:
+            last_exc = exc
+            logger.debug(
+                "DuckDuckGo attempt %d/%d failed for query '%s': %s",
+                attempt, 3, query[:60], exc,
+            )
+            if attempt < 3:
+                time.sleep(attempt * 1.5)
+
+    if raw_results is None and last_exc is not None:
+        raise WebSearchError(
+            f"DuckDuckGo search failed after 3 attempts: {last_exc}"
+        ) from last_exc
+
+    results: list[dict] = []
+    for r in raw_results or []:
+        url = r.get("href") or r.get("url") or ""
+        if not url:
             continue
+        results.append({
+            "url":           url,
+            "canonical_url": url,
+            "title":         r.get("title", ""),
+            "snippet":       r.get("body", ""),
+            "source":        _extract_domain(url),
+        })
 
-        # Enriquecer con contenido de la página cuando sea posible
-        page_content = _fetch_page_content(url)
-
-        scholarship = _build_scholarship(
-            name=title,
-            url=url,
-            description=body,
-            page_content=page_content,
-        )
-        if scholarship:
-            scholarships.append(scholarship)
-
-    return scholarships
+    logger.debug("search_web('%s') → %d results", query[:60], len(results))
+    return results
 
 
-def _is_irrelevant_url(url: str) -> bool:
-    """Filtra URLs que claramente no son de becas."""
-    skip_patterns = [
-        "youtube.com", "facebook.com", "twitter.com", "instagram.com",
-        "reddit.com", "wikipedia.org", "amazon.com",
-    ]
-    return any(p in url.lower() for p in skip_patterns)
-
-
-def _fetch_page_content(url: str) -> str:
-    """Descarga el contenido de una URL y extrae texto limpio."""
+def _extract_domain(url: str) -> str:
+    """Return the bare domain from a URL string."""
     try:
-        response = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "lxml")
-
-        # Eliminar scripts y estilos
-        for tag in soup(["script", "style", "nav", "footer", "header"]):
-            tag.decompose()
-
-        text = soup.get_text(separator=" ", strip=True)
-        # Limitar a 3000 caracteres
-        return text[:3000]
-
+        from urllib.parse import urlsplit
+        return urlsplit(url).netloc.lower().removeprefix("www.")
     except Exception:
         return ""
-
-
-def _build_scholarship(
-    name: str,
-    url: str,
-    description: str,
-    page_content: str,
-) -> Scholarship | None:
-    """
-    Construye un objeto Scholarship a partir del texto disponible.
-    Usa heurísticas simples; el EvaluatorAgent hará el análisis profundo.
-    """
-    combined_text = f"{name} {description} {page_content}".lower()
-
-    # Detectar tipo de financiamiento
-    if "fully funded" in combined_text or "full scholarship" in combined_text or "beca completa" in combined_text:
-        funding_type = FundingType.FULL
-    elif "tuition" in combined_text and "stipend" not in combined_text:
-        funding_type = FundingType.TUITION_ONLY
-    elif "partial" in combined_text or "parcial" in combined_text:
-        funding_type = FundingType.PARTIAL
-    else:
-        funding_type = FundingType.FULL  # Asumir completa por defecto
-
-    # Detectar niveles académicos mencionados
-    eligible_levels = []
-    level_map = {
-        "undergraduate": AcademicLevel.UNDERGRADUATE,
-        "bachelor": AcademicLevel.UNDERGRADUATE,
-        "master": AcademicLevel.MASTER,
-        "phd": AcademicLevel.PHD,
-        "doctoral": AcademicLevel.PHD,
-        "postdoc": AcademicLevel.POSTDOC,
-    }
-    for keyword, level in level_map.items():
-        if keyword in combined_text and level not in eligible_levels:
-            eligible_levels.append(level)
-
-    # Detectar deadline (patrón básico)
-    deadline = None
-    deadline_patterns = [
-        r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+20\d{2}\b",
-        r"\b\d{1,2}/\d{1,2}/20\d{2}\b",
-        r"\b20\d{2}-\d{2}-\d{2}\b",
-    ]
-    for pattern in deadline_patterns:
-        match = re.search(pattern, combined_text, re.IGNORECASE)
-        if match:
-            deadline = match.group(0)
-            break
-
-    # Extraer proveedor del dominio
-    domain_match = re.search(r"https?://(?:www\.)?([^/]+)", url)
-    provider = domain_match.group(1) if domain_match else "Desconocido"
-
-    # Descripción limpia: preferir body de DuckDuckGo
-    clean_desc = description if description else page_content[:300]
-
-    try:
-        return Scholarship(
-            name=name,
-            provider=provider,
-            url=url,
-            description=clean_desc,
-            funding_type=funding_type,
-            deadline=deadline,
-            eligible_levels=eligible_levels,
-        )
-    except Exception as e:
-        logger.debug(f"Error construyendo Scholarship: {e}")
-        return None

@@ -5,46 +5,50 @@ description = "Multi-agent AI scholarship finder — AMD Developer Hackathon 202
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    # Orquestación de agentes
+    # ── Schemas y configuración ──────────────────────────────────────────────
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+
+    # ── Web Search & Scraping (agentes de búsqueda) ──────────────────────────
+    "duckduckgo-search>=6.0.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml",
+    "requests>=2.32.0",
+    "httpx>=0.27.0",
+
+    # ── Utilidades ───────────────────────────────────────────────────────────
+    "loguru>=0.7.0",
+    "tenacity>=8.3.0",
+    "rich",
+    "psutil>=5.9.0",
+
+    # ── Frontend ─────────────────────────────────────────────────────────────
+    "streamlit>=1.35.0",
+    "streamlit-extras",
+
+    # ── Procesamiento de documentos (page reader) ────────────────────────────
+    "pypdf>=4.0.0",
+
+    # ── LangGraph — grafo LangGraph opcional (agents/ directory) ─────────────
+    # Solo necesario si usas los agentes LangGraph (agents/orchestrator.py).
+    # El pipeline CLI principal (main.py + agent/) NO requiere langchain.
     "langchain>=0.2.0",
     "langchain-community>=0.2.0",
     "langchain-openai>=0.1.0",
     "langgraph>=0.1.0",
-    # LLM / Inferencia
     "openai>=1.0.0",
-    "ollama",
-    # RAG / Embeddings
-    "chromadb>=0.5.0",
-    "sentence-transformers>=2.7.0",
     "tiktoken",
-    # Web Search & Scraping
-    "duckduckgo-search>=6.0.0",
-    "beautifulsoup4>=4.12.0",
-    "requests>=2.32.0",
-    "httpx>=0.27.0",
-    "lxml",
-    # Procesamiento de documentos
-    "pypdf>=4.0.0",
-    "python-docx",
-    # Schemas y validación
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-    # API
-    "fastapi>=0.111.0",
-    "uvicorn[standard]>=0.30.0",
-    # Frontend
-    "streamlit>=1.35.0",
-    "streamlit-extras",
-    # Utilidades
-    "python-dotenv>=1.0.0",
-    "loguru>=0.7.0",
-    "tenacity>=8.3.0",
-    "rich",
-    "vllm>=0.20.1",
+
+    # ── vLLM — solo en Linux (servidor AMD MI300X en cloud) ──────────────────
+    # No se importa en Python — es el servidor que corre en el droplet AMD.
+    # Se instala automáticamente al hacer uv sync en el cloud (Linux).
+    # En Windows/macOS se omite sin error gracias al marker.
+    "vllm>=0.4.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
 [project.scripts]
-becas-api = "main:main"
+becas = "main:main"
 
 [dependency-groups]
 dev = [
@@ -56,5 +60,15 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
 [tool.hatch.build.targets.wheel]
 packages = ["."]
+
+[tool.uv]
+# Allows resolution for both Linux (AMD cloud) and Windows (dev) simultaneously.
+# This prevents uv from failing when resolving linux-only wheels on Windows.
+environments = [
+    "sys_platform == 'linux'",
+    "sys_platform == 'win32'",
+    "sys_platform == 'darwin'",
+]

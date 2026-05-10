@@ -11,7 +11,7 @@ from config.prompts import SEARCH_SYSTEM_PROMPT
 from config.settings import settings
 from models.schemas import Scholarship
 from models.state import AgentState
-from tools.web_search import search_scholarships
+from tools.web_search import WebSearchError, search_web
 
 
 def search_agent(state: AgentState) -> dict:
@@ -74,36 +74,43 @@ def search_agent(state: AgentState) -> dict:
             f"fully funded scholarships {profile.country_of_origin} {profile.academic_level}",
         ]
 
-    # 2. Ejecutar búsquedas
-    all_scholarships: list[Scholarship] = []
-    for query in queries[: settings.max_search_results]:
-        found = search_scholarships(query, max_results=settings.max_scholarships_per_search)
-        all_scholarships.extend(found)
-        logger.info(f"  ✓ Query '{query[:50]}...' → {len(found)} becas")
+    # 2. Ejecutar búsquedas — search_web returns raw dicts
+    max_queries = getattr(settings, "SEARCH_MAX_QUERIES", 5)
+    max_per_query = getattr(settings, "SEARCH_MAX_RESULTS_PER_QUERY", 5)
+    raw_results: list[dict] = []
+    for query in queries[:max_queries]:
+        try:
+            found = search_web(query, max_results=max_per_query)
+            raw_results.extend(found)
+            logger.info(f"  ✓ Query '{query[:50]}...' → {len(found)} resultados")
+        except WebSearchError as exc:
+            logger.warning(f"  ✗ Query '{query[:50]}' falló: {exc}")
 
-    # Eliminar duplicados por URL
-    seen_urls = set()
-    unique_scholarships = []
-    for s in all_scholarships:
-        if s.url not in seen_urls:
-            seen_urls.add(s.url)
-            unique_scholarships.append(s)
+    # Deduplicate by URL
+    seen_urls: set[str] = set()
+    unique_results: list[dict] = []
+    for r in raw_results:
+        url = r.get("url", "")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            unique_results.append(r)
 
-    logger.success(f"✅ SearchAgent: {len(unique_scholarships)} becas únicas encontradas")
+    logger.success(f"✅ SearchAgent: {len(unique_results)} resultados únicos encontrados")
 
     return {
         "search_queries": queries,
-        "raw_scholarships": unique_scholarships,
+        "raw_scholarships": unique_results,
         "current_step": "evaluate",
         "messages": [
             {
                 "role": "assistant",
                 "content": (
                     f"🔍 Búsqueda completada.\n"
-                    f"- Queries ejecutadas: **{len(queries)}**\n"
-                    f"- Becas encontradas: **{len(unique_scholarships)}**\n\n"
+                    f"- Queries ejecutadas: **{len(queries[:max_queries])}**\n"
+                    f"- Resultados encontrados: **{len(unique_results)}**\n\n"
                     f"Evaluando compatibilidad con tu perfil..."
                 ),
             }
         ],
     }
+
