@@ -16,10 +16,15 @@ import hmac
 import json
 import os
 import time
+from pathlib import Path
 import urllib.parse
 import urllib.request
 import urllib.error
 from dataclasses import dataclass
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 _GOOGLE_AUTH_URL   = "https://accounts.google.com/o/oauth2/v2/auth"
