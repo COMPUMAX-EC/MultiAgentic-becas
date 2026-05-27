@@ -191,6 +191,6 @@ def _start_oauth() -> None:
             f'<meta http-equiv="refresh" content="0; url={auth_url}">',
             unsafe_allow_html=True,
         )
-        st.info("Redirecting to Google… if nothing happens, [click here]({auth_url}).")
+        st.info(f"Redirecting to Google… if nothing happens, [click here]({auth_url}).")
     except OAuthError as exc:
         st.error(f"❌ Cannot start login: {exc}")

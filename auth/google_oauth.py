@@ -26,10 +26,10 @@ _GOOGLE_AUTH_URL   = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL  = "https://oauth2.googleapis.com/token"
 _GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
-_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID", "")
-_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID", os.getenv("GCP_CLIENT_ID", ""))
+_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", os.getenv("GCP_CLIENT_SECRET", ""))
 _REDIRECT_URI  = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8501/")
-_SECRET_KEY    = os.getenv("SESSION_SECRET_KEY", "change-me-in-production")
+_SECRET_KEY    = os.getenv("SESSION_SECRET_KEY", "").strip()
 _TOKEN_TTL_S   = 8 * 3600   # 8-hour session
 
 
@@ -46,12 +46,22 @@ class UserInfo:
     email_verified: bool
 
 
+def _require_secret_key() -> str:
+    """Return the signing secret or fail fast with a configuration error."""
+    if not _SECRET_KEY:
+        raise OAuthError(
+            "SESSION_SECRET_KEY is not set. Add it to your .env file and restart the app."
+        )
+    return _SECRET_KEY
+
+
 # ── State (CSRF) helpers ──────────────────────────────────────────────────────
 
 def _sign(message: str) -> str:
     """Return HMAC-SHA256 hex digest of message using SESSION_SECRET_KEY."""
+    secret_key = _require_secret_key()
     return hmac.new(
-        _SECRET_KEY.encode(),
+        secret_key.encode(),
         message.encode(),
         hashlib.sha256,
     ).hexdigest()
@@ -101,7 +111,7 @@ def build_auth_url() -> tuple[str, str]:
     """
     if not _CLIENT_ID:
         raise OAuthError(
-            "GOOGLE_CLIENT_ID is not set. "
+            "GOOGLE_CLIENT_ID / GCP_CLIENT_ID is not set. "
             "Add it to your .env file (see .env.example)."
         )
     state = build_state_token()
@@ -184,7 +194,7 @@ def exchange_code_for_user(code: str, state: str, saved_state: str) -> UserInfo:
     # 2. Exchange code → access_token
     if not _CLIENT_SECRET:
         raise OAuthError(
-            "GOOGLE_CLIENT_SECRET is not set. Add it to your .env file."
+            "GOOGLE_CLIENT_SECRET / GCP_CLIENT_SECRET is not set. Add it to your .env file."
         )
     token_resp = _post_json(_GOOGLE_TOKEN_URL, {
         "code":          code,
