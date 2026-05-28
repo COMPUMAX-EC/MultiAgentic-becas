@@ -33,12 +33,28 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;}
 </style>
 """, unsafe_allow_html=True)
 
+# ── Auth: process OAuth callback before UI ───────────────────────────────────
+try:
+    from auth.session import get_current_user
+    from auth.quota import QuotaExceededError, consume_query, get_quota_status
+    from frontend.utils.profile_ui import (
+        build_search_query,
+        profile_is_complete,
+        render_profile_editor,
+    )
+    _AUTH_AVAILABLE = True
+    _user_early = get_current_user()
+except ImportError:
+    _AUTH_AVAILABLE = False
+    _user_early = None
+
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### 🎓 MultiAgentic\n**Scholarships**")
     st.markdown("---")
     st.page_link("app.py", label="🏠 Home")
     st.page_link("pages/1_Search_Scholarships.py", label="🔍 Search Scholarships")
+    st.page_link("pages/3_Apply_Scholarship.py", label="📝 Apply to Scholarship")
     st.page_link("pages/2_Monitor.py", label="📊 System Monitor")
     st.markdown("---")
     top_k = st.slider("Max results", 3, 20, 10)
@@ -59,19 +75,31 @@ with st.sidebar:
     except Exception:
         pass
 
-# ── Auth gate — MUST be authenticated to search ──────────────────────────────
-try:
+# ── Auth gate — login only in sidebar when logged out ────────────────────────
+if _AUTH_AVAILABLE:
     from auth.session import require_login
-    from auth.quota import QuotaExceededError, consume_query, get_quota_status
-    _AUTH_AVAILABLE = True
-    user = require_login()   # stops page here if not logged in
-except ImportError:
-    _AUTH_AVAILABLE = False
+    user = require_login(sidebar_only=True)
+else:
     user = None
 
 # ── Page header ───────────────────────────────────────────────────────────────
 st.markdown("<h1 style='color:#e2e8f0;font-size:1.9rem;'>🔍 Search Scholarships</h1>", unsafe_allow_html=True)
-st.markdown("<p style='color:#64748b;'>Describe what you're looking for — the AI model semantically ranks scholarships from the knowledge base.</p>", unsafe_allow_html=True)
+st.markdown(
+    "<p style='color:#64748b;'>Completa tu perfil y busca hasta "
+    "<strong style='color:#818cf8;'>5 becas por día</strong> según tu perfil académico.</p>",
+    unsafe_allow_html=True,
+)
+
+# ── Academic profile (per user) ───────────────────────────────────────────────
+_profile: dict = {}
+_profile_ok = True
+if _AUTH_AVAILABLE and user:
+    _profile = render_profile_editor(user.sub)
+    _profile_ok = profile_is_complete(_profile)
+    if not _profile_ok:
+        st.warning(
+            "Guarda tu perfil con los campos obligatorios (*) antes de buscar becas."
+        )
 
 # ── Daily quota banner ────────────────────────────────────────────────────────
 _quota_ok = True
@@ -103,25 +131,28 @@ if _AUTH_AVAILABLE and user:
 
     if remaining <= 0:
         _quota_ok = False
-        st.markdown("""
+        st.markdown(
+            f"""
 <div class='quota-exhausted'>
   <div style='font-size:2.5rem;margin-bottom:.5rem;'>⛔</div>
   <div style='font-size:1.1rem;font-weight:600;color:#f87171;margin-bottom:.4rem;'>
     Daily limit reached
   </div>
   <div style='color:#64748b;font-size:.9rem;'>
-    You've used all <strong style='color:#f87171;'>5 searches</strong> for today.<br>
+    You've used all <strong style='color:#f87171;'>{limit} searches</strong> for today.<br>
     Your quota resets automatically after <strong>24 hours</strong>.
   </div>
-</div>""", unsafe_allow_html=True)
+</div>""",
+            unsafe_allow_html=True,
+        )
 
 # ── Search form ───────────────────────────────────────────────────────────────
 query = st.text_area(
     "Query",
-    placeholder="e.g. 'Colombian systems engineering student looking for a fully funded master's in AI in Europe'",
-    height=90,
+    placeholder="Preferencias extra (opcional): ej. 'beca full funding en IA, deadline 2026'",
+    height=70,
     label_visibility="collapsed",
-    disabled=not _quota_ok,
+    disabled=not _quota_ok or not _profile_ok,
 )
 c1, c2 = st.columns([1, 6])
 with c1:
@@ -129,15 +160,15 @@ with c1:
         "🔍 Search",
         type="primary",
         use_container_width=True,
-        disabled=not _quota_ok,
+        disabled=not _quota_ok or not _profile_ok,
     )
 
 # ── Execute search ────────────────────────────────────────────────────────────
-if search and query.strip() and _quota_ok:
-    # Consume quota BEFORE running the (expensive) search
+if search and _quota_ok and _profile_ok:
+    search_text = build_search_query(_profile, query)
     if _AUTH_AVAILABLE and user:
         try:
-            consume_query(user.sub, query)
+            consume_query(user.sub, search_text)
         except QuotaExceededError as qe:
             st.error(f"⛔ {qe}")
             st.stop()
@@ -145,7 +176,12 @@ if search and query.strip() and _quota_ok:
     with st.spinner("🤖 Running semantic search…"):
         try:
             from frontend.utils.scholarship_search import semantic_search_scholarships
-            results = semantic_search_scholarships(query, limit=scan, top_k=top_k)
+            results = semantic_search_scholarships(
+                search_text,
+                limit=scan,
+                top_k=top_k,
+                profile=_profile,
+            )
         except Exception as e:
             st.error(f"Search error: {e}")
             results = []
@@ -176,6 +212,20 @@ if search and query.strip() and _quota_ok:
                 <span class="tag {sc}">● {status_val}</span>{fields}</div>
                 <div style="margin-top:.7rem;display:flex;gap:1.5rem;">{dl_html}{url_html}</div>
                 {reason_html}</div>""", unsafe_allow_html=True)
+            if _AUTH_AVAILABLE and user:
+                if st.button(
+                    "📝 Preparar postulación",
+                    key=f"apply_{s.get('scholarship_hash', s.get('scholarship_name', ''))}",
+                ):
+                    st.session_state["apply_scholarship"] = dict(s)
+                    st.switch_page("pages/3_Apply_Scholarship.py")
 
-elif not query.strip() and _quota_ok:
-    st.markdown("<div style='text-align:center;padding:3rem;color:#475569;'><div style='font-size:4rem;'>🔍</div><div style='margin-top:1rem;font-size:1.1rem;'>Type a query above and press Search.</div></div>", unsafe_allow_html=True)
+elif _quota_ok and _profile_ok:
+    st.markdown(
+        "<div style='text-align:center;padding:3rem;color:#475569;'>"
+        "<div style='font-size:4rem;'>🔍</div>"
+        "<div style='margin-top:1rem;font-size:1.1rem;'>"
+        "Perfil listo — pulsa Search para encontrar becas acordes a tu perfil."
+        "</div></div>",
+        unsafe_allow_html=True,
+    )

@@ -58,6 +58,30 @@ def test_session_token_round_trip(monkeypatch) -> None:
     assert google_oauth.verify_session_token(token) == user
 
 
+def test_state_token_round_trip(monkeypatch) -> None:
+    google_oauth = load_google_oauth(monkeypatch, session_secret="d" * 64)
+
+    state = google_oauth.build_state_token()
+    assert google_oauth.verify_state_token(state)
+
+
+def test_exchange_accepts_signed_state_without_saved_session(monkeypatch) -> None:
+    google_oauth = load_google_oauth(monkeypatch, session_secret="e" * 64)
+    state = google_oauth.build_state_token()
+
+    # saved_state empty simulates Streamlit session lost after Google redirect
+    with pytest.raises(google_oauth.OAuthError, match="GOOGLE_CLIENT_SECRET"):
+        google_oauth.exchange_code_for_user("fake-code", state, "")
+
+
+def test_exchange_rejects_mismatched_saved_state(monkeypatch) -> None:
+    google_oauth = load_google_oauth(monkeypatch, session_secret="f" * 64)
+    state = google_oauth.build_state_token()
+
+    with pytest.raises(google_oauth.OAuthError, match="CSRF state mismatch"):
+        google_oauth.exchange_code_for_user("fake-code", state, "other-state")
+
+
 def test_session_token_rejects_tampering(monkeypatch) -> None:
     google_oauth = load_google_oauth(monkeypatch, session_secret="b" * 64)
 

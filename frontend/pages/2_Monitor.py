@@ -65,6 +65,7 @@ with st.sidebar:
     st.markdown("---")
     st.page_link("app.py", label="🏠 Home")
     st.page_link("pages/1_Search_Scholarships.py", label="🔍 Search Scholarships")
+    st.page_link("pages/3_Apply_Scholarship.py", label="📝 Apply to Scholarship")
     st.page_link("pages/2_Monitor.py", label="📊 System Monitor")
     st.markdown("---")
     auto_refresh = st.toggle("Auto-refresh", value=True)

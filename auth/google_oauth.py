@@ -190,11 +190,12 @@ def exchange_code_for_user(code: str, state: str, saved_state: str) -> UserInfo:
     Raises:
         OAuthError on any validation or network failure
     """
-    # 1. CSRF check — state from Google must match what we generated
-    if not saved_state or state != saved_state:
-        raise OAuthError("CSRF state mismatch — possible cross-site request forgery.")
+    # 1. CSRF check — HMAC-signed state (survives redirect when st.session_state is lost)
     if not verify_state_token(state):
         raise OAuthError("OAuth state token is invalid or expired.")
+    # Optional bind to Streamlit session when still available (e.g. local dev)
+    if saved_state and state != saved_state:
+        raise OAuthError("CSRF state mismatch — possible cross-site request forgery.")
 
     # 2. Exchange code → access_token
     if not _CLIENT_SECRET:

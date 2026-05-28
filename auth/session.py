@@ -42,9 +42,8 @@ def get_current_user() -> UserInfo | None:
     Also handles the OAuth callback if ?code= is present in the URL.
     """
     # 1. Handle OAuth callback (?code=X&state=Y in query params)
-    params = st.query_params
-    code  = params.get("code")
-    state = params.get("state")
+    code  = _query_param("code")
+    state = _query_param("state")
     if code and state:
         _handle_callback(code, state)
         return get_current_user()   # re-read after callback
@@ -61,16 +60,22 @@ def get_current_user() -> UserInfo | None:
     return None
 
 
-def require_login() -> UserInfo:
+def require_login(*, sidebar_only: bool = False) -> UserInfo:
     """
-    Gate: if no valid session exists, render a full-page login prompt and stop.
-    Returns the authenticated UserInfo if a session is active.
+    Gate: if no valid session exists, stop the page.
 
-    Call at the TOP of any page that requires authentication.
+    sidebar_only=True — no full-page login; user signs in via sidebar widget.
     """
     user = get_current_user()
     if user:
         return user
+    if sidebar_only:
+        st.markdown("### 🔐 Sign in required")
+        st.info(
+            "Use **Login with Google** in the sidebar to access scholarship search. "
+            "Each account gets **5 profile-based searches per day**."
+        )
+        st.stop()
     _render_login_page()
     st.stop()
 
@@ -97,6 +102,7 @@ def _handle_callback(code: str, state: str) -> None:
         st.session_state.pop(_PENDING_STATE_KEY, None)
         # Clean ?code and ?state from the URL to prevent re-processing on refresh
         st.query_params.clear()
+        st.rerun()
     except OAuthError as exc:
         st.session_state.pop(_PENDING_STATE_KEY, None)
         st.query_params.clear()
@@ -182,15 +188,21 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;}
 """, unsafe_allow_html=True)
 
 
+def _query_param(name: str) -> str | None:
+    """Read a single query param (Streamlit may return str or list)."""
+    raw = st.query_params.get(name)
+    if raw is None:
+        return None
+    if isinstance(raw, list):
+        return raw[0] if raw else None
+    return str(raw)
+
+
 def _start_oauth() -> None:
     """Redirect the browser to Google's authorization endpoint."""
     try:
         auth_url, state = build_auth_url()
         st.session_state[_PENDING_STATE_KEY] = state
-        st.markdown(
-            f'<meta http-equiv="refresh" content="0; url={auth_url}">',
-            unsafe_allow_html=True,
-        )
-        st.info(f"Redirecting to Google… if nothing happens, [click here]({auth_url}).")
+        st.redirect(auth_url)
     except OAuthError as exc:
         st.error(f"❌ Cannot start login: {exc}")

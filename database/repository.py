@@ -591,6 +591,50 @@ def update_scholarship_last_seen(
 #  Auth — user accounts and daily quota
 # ══════════════════════════════════════════════════════════════════════════════
 
+def get_user_profile(
+    google_sub: str,
+    db_path: str | Path | None = None,
+) -> dict:
+    """Return the saved academic profile for a user, or {} if none."""
+    init_database(db_path)
+    connection = get_connection(db_path)
+    try:
+        row = connection.execute(
+            "SELECT profile_json FROM users WHERE google_sub = ?",
+            (google_sub,),
+        ).fetchone()
+        if not row or not row["profile_json"]:
+            return {}
+        data = json.loads(row["profile_json"])
+        return data if isinstance(data, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+    finally:
+        close_connection(connection)
+
+
+def save_user_profile(
+    google_sub: str,
+    profile: dict,
+    db_path: str | Path | None = None,
+) -> None:
+    """Persist the user's academic profile JSON."""
+    init_database(db_path)
+    connection = get_connection(db_path)
+    try:
+        connection.execute(
+            """
+            UPDATE users
+            SET profile_json = ?
+            WHERE google_sub = ?
+            """,
+            (json.dumps(profile, ensure_ascii=False), google_sub),
+        )
+        connection.commit()
+    finally:
+        close_connection(connection)
+
+
 def upsert_user(
     google_sub: str,
     email: str,

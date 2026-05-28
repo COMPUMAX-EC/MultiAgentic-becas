@@ -29,15 +29,28 @@ def _summary(s: dict) -> str:
             f"Languages: {', '.join(langs)}\nStatus: {s.get('application_status','')}")
 
 
-def semantic_search_scholarships(query: str, limit: int = 50, top_k: int = 10) -> list[dict]:
+def semantic_search_scholarships(
+    query: str,
+    limit: int = 50,
+    top_k: int = 10,
+    profile: dict | None = None,
+) -> list[dict]:
     all_s = list_recent_scholarships(limit=limit)
     if not all_s:
         return []
     if not query.strip():
         return all_s[:top_k]
 
+    student_block = query.strip()
+    if profile:
+        student_block = (
+            "Student profile:\n"
+            f"{query.strip()}\n\n"
+            "Rank scholarships by fit with this profile."
+        )
+
     summaries = [f"[{i+1}] {_summary(s)}" for i, s in enumerate(all_s)]
-    prompt = (f'You are a scholarship advisor. Student query: "{query}"\n\n'
+    prompt = (f'You are a scholarship advisor. Student context:\n"""{student_block}"""\n\n'
               f"Select the top {top_k} most relevant scholarships.\n"
               'Return JSON array: [{"index": <1-based>, "relevance_reason": "..."}, ...]\n'
               "Output ONLY the JSON array.\n\nScholarships:\n" + "\n".join(summaries[:40]))
