@@ -1,14 +1,42 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Ensure project root is importable when this module is imported
+# from different entrypoints (Streamlit, scripts, tests).
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 from database.connection import close_connection, get_connection
 from database.migrations import run_migrations
-from utils.hash_utils import profile_hash as build_profile_hash
-from utils.hash_utils import scholarship_hash as build_scholarship_hash
-from utils.url_utils import extract_domain
+
+# Some deployment environments end up with an unexpected sys.path under systemd/Streamlit.
+# Prefer normal imports, but fall back to loading these helpers directly by file path.
+try:
+    from utils.hash_utils import profile_hash as build_profile_hash
+    from utils.hash_utils import scholarship_hash as build_scholarship_hash
+    from utils.url_utils import extract_domain
+except ModuleNotFoundError:
+    import importlib.util
+
+    def _load_module_from_path(name: str, path: Path):
+        spec = importlib.util.spec_from_file_location(name, str(path))
+        if spec is None or spec.loader is None:
+            raise ModuleNotFoundError(f"Cannot load module {name} from {path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    _hash_mod = _load_module_from_path("hash_utils", _ROOT / "utils" / "hash_utils.py")
+    _url_mod = _load_module_from_path("url_utils", _ROOT / "utils" / "url_utils.py")
+
+    build_profile_hash = _hash_mod.profile_hash
+    build_scholarship_hash = _hash_mod.scholarship_hash
+    extract_domain = _url_mod.extract_domain
 
 
 def _now_iso() -> str:
@@ -646,21 +674,28 @@ def upsert_user(
     Insert a new user or update last_login_at on subsequent logins.
     Uses google_sub as the stable unique key (immutable across email changes).
     """
+    import os
     init_database(db_path)
     connection = get_connection(db_path)
     try:
         now = _now_iso()
+        admin_emails_env = os.getenv("ADMIN_EMAILS", "")
+        admin_emails = [e.strip().lower() for e in admin_emails_env.split(",") if e.strip()]
+        is_admin_email = email.lower() in admin_emails or email.lower() == "squelal91@gmail.com"
+        role = "admin" if is_admin_email else "user"
+
         connection.execute(
             """
-            INSERT INTO users (google_sub, email, name, picture_url, created_at, last_login_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (google_sub, email, name, picture_url, role, created_at, last_login_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(google_sub) DO UPDATE SET
                 email         = excluded.email,
                 name          = excluded.name,
                 picture_url   = excluded.picture_url,
+                role          = CASE WHEN users.role = 'admin' THEN 'admin' ELSE excluded.role END,
                 last_login_at = excluded.last_login_at
             """,
-            (google_sub, email, name, picture_url, now, now),
+            (google_sub, email, name, picture_url, role, now, now),
         )
         connection.commit()
     finally:
@@ -713,5 +748,98 @@ def record_user_query(
             (google_sub, query_hash, _now_iso()),
         )
         connection.commit()
+    finally:
+        close_connection(connection)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Auth — administrative and premium status functions
+# ══════════════════════════════════════════════════════════════════════════════
+
+def get_user(
+    google_sub: str,
+    db_path: str | Path | None = None,
+) -> dict | None:
+    """Return the complete user record from the database, or None."""
+    init_database(db_path)
+    connection = get_connection(db_path)
+    try:
+        row = connection.execute(
+            "SELECT * FROM users WHERE google_sub = ?",
+            (google_sub,),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        close_connection(connection)
+
+
+def update_user_premium_status(
+    google_sub: str,
+    status: str,
+    receipt_path: str | None = None,
+    db_path: str | Path | None = None,
+) -> None:
+    """
+    Update the premium status of a user in the database.
+    If status is 'approved', is_premium is set to 1, otherwise 0.
+    """
+    init_database(db_path)
+    connection = get_connection(db_path)
+    try:
+        is_premium = 1 if status == "approved" else 0
+        if receipt_path is not None:
+            connection.execute(
+                """
+                UPDATE users
+                SET premium_status = ?, premium_receipt_path = ?, is_premium = ?
+                WHERE google_sub = ?
+                """,
+                (status, receipt_path, is_premium, google_sub),
+            )
+        else:
+            connection.execute(
+                """
+                UPDATE users
+                SET premium_status = ?, is_premium = ?
+                WHERE google_sub = ?
+                """,
+                (status, is_premium, google_sub),
+            )
+        connection.commit()
+    finally:
+        close_connection(connection)
+
+
+def list_users_by_premium_status(
+    status: str | None = None,
+    db_path: str | Path | None = None,
+) -> list[dict]:
+    """Return a list of users filtered by premium_status, or all users if status is None."""
+    init_database(db_path)
+    connection = get_connection(db_path)
+    try:
+        if status is not None:
+            rows = connection.execute(
+                "SELECT * FROM users WHERE premium_status = ? ORDER BY last_login_at DESC",
+                (status,),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                "SELECT * FROM users ORDER BY last_login_at DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        close_connection(connection)
+
+
+def list_all_scholarships(
+    db_path: str | Path | None = None,
+) -> list[dict]:
+    """Return a list of all scholarships currently in the database."""
+    init_database(db_path)
+    connection = get_connection(db_path)
+    try:
+        rows = connection.execute("SELECT * FROM scholarships").fetchall()
+        return [dict(row) for row in rows]
     finally:
         close_connection(connection)

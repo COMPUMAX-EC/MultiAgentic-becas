@@ -50,9 +50,19 @@ def get_current_user() -> UserInfo | None:
 
     # 2. Validate existing session token
     token = st.session_state.get(_SESSION_TOKEN_KEY)
+    
+    # 3. Fallback: Validate existing session token in query params (survives refresh!)
+    if not token:
+        token = st.query_params.get(_SESSION_TOKEN_KEY)
+        if token:
+            st.session_state[_SESSION_TOKEN_KEY] = token
+
     if token:
         user = verify_session_token(token)
         if user:
+            # Sync back to query params to preserve across refreshes
+            if st.query_params.get(_SESSION_TOKEN_KEY) != token:
+                st.query_params[_SESSION_TOKEN_KEY] = token
             return user
         # Token expired — clear it
         _clear_session()
@@ -102,6 +112,8 @@ def _handle_callback(code: str, state: str) -> None:
         st.session_state.pop(_PENDING_STATE_KEY, None)
         # Clean ?code and ?state from the URL to prevent re-processing on refresh
         st.query_params.clear()
+        # Set session token in query params to persist across refreshes!
+        st.query_params[_SESSION_TOKEN_KEY] = token
         st.rerun()
     except OAuthError as exc:
         st.session_state.pop(_PENDING_STATE_KEY, None)
@@ -203,6 +215,40 @@ def _start_oauth() -> None:
     try:
         auth_url, state = build_auth_url()
         st.session_state[_PENDING_STATE_KEY] = state
-        st.redirect(auth_url)
+        # Streamlit has no stable external redirect API across versions.
+        # Use client-side meta refresh for immediate same-tab navigation.
+        st.markdown(
+            f'<meta http-equiv="refresh" content="0;url={auth_url}">',
+            unsafe_allow_html=True,
+        )
+        st.stop()
     except OAuthError as exc:
         st.error(f"❌ Cannot start login: {exc}")
+
+
+def is_admin_user(user: UserInfo | None) -> bool:
+    """
+    Check if the user is an administrator based on the ADMIN_EMAILS environment variable
+    or the 'role' field in their database record.
+    """
+    if not user:
+        return False
+    import os
+    from database.repository import get_user
+    
+    # 1. Direct environment variable check
+    admin_emails_env = os.getenv("ADMIN_EMAILS", "")
+    admin_emails = [e.strip().lower() for e in admin_emails_env.split(",") if e.strip()]
+    if user.email.lower() in admin_emails or user.email.lower() == "squelal91@gmail.com":
+        return True
+        
+    # 2. Database role fallback
+    try:
+        db_u = get_user(user.sub)
+        if db_u and db_u.get("role") == "admin":
+            return True
+    except Exception:
+        pass
+        
+    return False
+

@@ -13,6 +13,14 @@ def _apply_schema_upgrades(connection) -> None:
     }
     if "profile_json" not in user_columns:
         connection.execute("ALTER TABLE users ADD COLUMN profile_json TEXT")
+    if "role" not in user_columns:
+        connection.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
+    if "premium_status" not in user_columns:
+        connection.execute("ALTER TABLE users ADD COLUMN premium_status TEXT DEFAULT 'none'")
+    if "premium_receipt_path" not in user_columns:
+        connection.execute("ALTER TABLE users ADD COLUMN premium_receipt_path TEXT")
+    if "is_premium" not in user_columns:
+        connection.execute("ALTER TABLE users ADD COLUMN is_premium INTEGER DEFAULT 0")
 
 
 def run_migrations(db_path: str | Path | None = None) -> None:

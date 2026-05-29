@@ -51,13 +51,32 @@ def render_auth_sidebar() -> None:
         f'vertical-align:middle;margin-right:.5rem;">'
         if user.picture else "👤 "
     )
+    from database.repository import get_user
+    is_premium = False
+    if user:
+        try:
+            db_user = get_user(user.sub)
+            if db_user and db_user.get("is_premium") == 1:
+                is_premium = True
+        except Exception:
+            pass
+
+    badge_html = (
+        '<span style="background:linear-gradient(90deg,#9DFF00,#ffffff);color:#050505;font-size:0.65rem;font-weight:800;padding:2px 6px;border-radius:4px;margin-left:0.5rem;vertical-align:middle;box-shadow:0 0 10px rgba(157,255,0,0.45);">💎 PRO</span>'
+        if is_premium else
+        '<span style="background:#334155;color:#94a3b8;font-size:0.65rem;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:0.5rem;vertical-align:middle;">FREE</span>'
+    )
+
     st.markdown(
         f"<div style='display:flex;align-items:center;gap:.4rem;"
         f"background:rgba(15,23,42,.7);border-radius:10px;padding:.5rem .7rem;"
         f"border:1px solid rgba(99,102,241,.2);margin-bottom:.5rem;'>"
         f"{avatar_html}"
-        f"<div>"
-        f"<div style='font-size:.82rem;font-weight:600;color:#e2e8f0;'>{user.name}</div>"
+        f"<div style='flex:1;'>"
+        f"<div style='display:flex;align-items:center;justify-content:space-between;'>"
+        f"<span style='font-size:.82rem;font-weight:600;color:#e2e8f0;'>{user.name}</span>"
+        f"{badge_html}"
+        f"</div>"
         f"<div style='font-size:.7rem;color:#64748b;'>{user.email}</div>"
         f"</div></div>",
         unsafe_allow_html=True,

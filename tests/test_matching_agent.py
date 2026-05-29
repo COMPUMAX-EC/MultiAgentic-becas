@@ -196,6 +196,30 @@ class MatchingAgentTests(unittest.TestCase):
         )
         self.assertNotEqual(result["eligibility_decision"], "rejected")
 
+    def test_regional_target_country_match_europe(self) -> None:
+        profile = dict(self.profile)
+        profile["target_countries"] = ["Europa"]
+        
+        scholarship = dict(self.base_scholarship)
+        scholarship["country"] = "Spain"
+        
+        result = MatchingAgent().match_scholarship(profile, scholarship)
+        self.assertTrue(
+            any("target_country: Spain compatible" in item for item in result["matched_profile_fields"])
+        )
+
+    def test_regional_target_country_match_latin_america(self) -> None:
+        profile = dict(self.profile)
+        profile["target_countries"] = ["Latinoamerica"]
+        
+        scholarship = dict(self.base_scholarship)
+        scholarship["country"] = "Ecuador"
+        
+        result = MatchingAgent().match_scholarship(profile, scholarship)
+        self.assertTrue(
+            any("target_country: Ecuador compatible" in item for item in result["matched_profile_fields"])
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

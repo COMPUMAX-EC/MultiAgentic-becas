@@ -119,6 +119,10 @@ CREATE_TABLE_STATEMENTS = (
         email         TEXT    NOT NULL,
         name          TEXT,
         picture_url   TEXT,
+        role          TEXT    DEFAULT 'user',
+        premium_status TEXT   DEFAULT 'none',
+        premium_receipt_path TEXT,
+        is_premium    INTEGER DEFAULT 0,
         created_at    TEXT    NOT NULL,
         last_login_at TEXT    NOT NULL
     )

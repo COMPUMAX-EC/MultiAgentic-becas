@@ -427,16 +427,40 @@ class MatchingAgent:
             if not scholarship_country:
                 missing_profile_fields.append("target_country: scholarship country unknown")
                 risk_factors.append("Scholarship destination country is unknown.")
-            elif scholarship_country.casefold() in target_countries:
-                compatibility_points += 1
-                matched_profile_fields.append(
-                    f"target_country: {scholarship_country} compatible"
-                )
             else:
-                missing_profile_fields.append(
-                    f"target_country: {scholarship_country} outside stated targets"
-                )
-                risk_factors.append("Destination country does not match stated target countries.")
+                european_countries = {
+                    "germany", "france", "spain", "united kingdom", "netherlands", "italy",
+                    "belgium", "switzerland", "sweden", "norway", "denmark", "finland",
+                    "austria", "portugal", "ireland", "poland", "greece", "hungary",
+                    "czech republic", "slovakia", "estonia", "latvia", "lithuania", "europe"
+                }
+                latin_american_countries = {
+                    "colombia", "ecuador", "peru", "mexico", "argentina", "chile", "brazil",
+                    "venezuela", "bolivia", "paraguay", "uruguay", "costa rica", "panama",
+                    "guatemala", "honduras", "el salvador", "nicaragua", "cuba",
+                    "dominican republic", "puerto rico", "latinoamerica", "latin america", "america latina"
+                }
+                
+                is_match = scholarship_country.casefold() in target_countries
+                if not is_match:
+                    for tc in target_countries:
+                        if tc in {"europa", "europe"} and scholarship_country.casefold() in european_countries:
+                            is_match = True
+                            break
+                        if tc in {"latinoamerica", "latin america", "america latina"} and scholarship_country.casefold() in latin_american_countries:
+                            is_match = True
+                            break
+                
+                if is_match:
+                    compatibility_points += 1
+                    matched_profile_fields.append(
+                        f"target_country: {scholarship_country} compatible"
+                    )
+                else:
+                    missing_profile_fields.append(
+                        f"target_country: {scholarship_country} outside stated targets"
+                    )
+                    risk_factors.append("Destination country does not match stated target countries.")
 
         profile_scholarship_type = normalize_text(profile.get("scholarship_type"))
         if profile_scholarship_type:
