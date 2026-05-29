@@ -36,9 +36,36 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;}
 [data-testid="stAppViewContainer"]{background:linear-gradient(135deg,#050505,#1a1a1a,#050505);}
 [data-testid="stSidebar"]{background:linear-gradient(180deg,#050505,#1a1a1a);border-right:1px solid rgba(157,255,0,0.35);}
 [data-testid="stSidebarNav"]{display:none !important;}
-[data-testid="stHeader"]{display:none !important;}
+[data-testid="stHeader"] {
+    background: transparent !important;
+    color: transparent !important;
+    pointer-events: none !important;
+}
+[data-testid="stHeader"] [data-testid="stHeaderActionElements"] {
+    display: none !important;
+}
+button[data-testid="stExpandSidebarButton"] {
+    pointer-events: auto !important;
+    color: #9DFF00 !important;
+    background-color: rgba(26, 26, 26, 0.8) !important;
+    border: 1px solid rgba(157, 255, 0, 0.3) !important;
+    border-radius: 8px !important;
+    margin-left: 10px !important;
+    margin-top: 10px !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+}
+button[data-testid="stExpandSidebarButton"] * {
+    color: #9DFF00 !important;
+    fill: #9DFF00 !important;
+}
 [data-testid="stToolbar"]{display:none !important;}
 footer{visibility:hidden !important;}
+.block-container, .stMainBlockContainer {
+    padding-top: 1.5rem !important;
+    padding-bottom: 1rem !important;
+}
 .sec-hdr{display:flex;align-items:center;gap:.7rem;margin:1.5rem 0 1rem;padding-bottom:.7rem;border-bottom:1px solid rgba(157,255,0,0.25);}
 .sec-title{font-size:1.2rem;font-weight:600;color:#e2e8f0;}
 /* Agent cards */
